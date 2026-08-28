@@ -78,3 +78,34 @@ void M95512::Reset()
     state = M95512State::IDLE;
     offset = 0;
 }
+
+void M95512::SaveEmulatorState(std::ostream& stream) const
+{
+    const uint8_t state_value = static_cast<uint8_t>(state);
+    stream.write(reinterpret_cast<const char*>(&state_value), sizeof(state_value));
+    stream.write(reinterpret_cast<const char*>(&is_reading), sizeof(is_reading));
+    stream.write(reinterpret_cast<const char*>(&status), sizeof(status));
+    stream.write(reinterpret_cast<const char*>(&high_addr), sizeof(high_addr));
+    stream.write(reinterpret_cast<const char*>(&low_addr), sizeof(low_addr));
+    stream.write(reinterpret_cast<const char*>(&offset), sizeof(offset));
+}
+
+bool M95512::LoadEmulatorState(std::istream& stream)
+{
+    uint8_t state_value = 0;
+    stream.read(reinterpret_cast<char*>(&state_value), sizeof(state_value));
+    stream.read(reinterpret_cast<char*>(&is_reading), sizeof(is_reading));
+    stream.read(reinterpret_cast<char*>(&status), sizeof(status));
+    stream.read(reinterpret_cast<char*>(&high_addr), sizeof(high_addr));
+    stream.read(reinterpret_cast<char*>(&low_addr), sizeof(low_addr));
+    stream.read(reinterpret_cast<char*>(&offset), sizeof(offset));
+    if (!stream)
+        return false;
+
+    if (state_value > static_cast<uint8_t>(M95512State::STATUS))
+        state_value = static_cast<uint8_t>(M95512State::IDLE);
+
+    state = static_cast<M95512State>(state_value);
+    offset %= 128;
+    return true;
+}

@@ -1,4 +1,7 @@
 #pragma once
+#include <istream>
+#include <ostream>
+
 #include "core/memory/interface.h"
 #include "core/soc/interrupts/interrupts.h"
 #include "core/utils/h8300h_ptr.h"
@@ -53,6 +56,8 @@ public:
     void RegisterIOHandlers(const std::shared_ptr<IO>& io);
 
     void Cycle(uint8_t cycles);
+    void SaveEmulatorState(std::ostream& stream) const;
+    bool LoadEmulatorState(std::istream& stream);
 
     TMRW_t TMRW = {};
     TCRW_t TCRW = {};

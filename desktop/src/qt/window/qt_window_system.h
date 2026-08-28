@@ -21,6 +21,7 @@ public:
 protected:
     void keyPressEvent(QKeyEvent* event) override;
     void keyReleaseEvent(QKeyEvent* event) override;
+    void changeEvent(QEvent* event) override;
     void closeEvent(QCloseEvent* event) override;
 
 private slots:
@@ -35,6 +36,7 @@ private:
     void addToRecentROMs(const std::string& path);
     void updateRecentROMsMenu();
     void setEmulatorActionsEnabled(bool enabled);
+    void releaseHeldInputs();
     void applyTheme();
     void setBypassPowerSave();
 

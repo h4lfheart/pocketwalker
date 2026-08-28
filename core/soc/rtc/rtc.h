@@ -1,5 +1,7 @@
 #pragma once
+#include <chrono>
 #include <ctime>
+#include <string>
 
 #include "core/soc/interrupts/interrupts.h"
 
@@ -32,6 +34,8 @@ public:
     void RegisterIOHandlers(const std::shared_ptr<IO>& io);
 
     void Cycle(uint8_t cycles);
+    void LoadState(const std::string& path);
+    void SaveState(const std::string& path);
 
     RTCCR1_t RTCCR1 = {};
     uint8_t RSECDR = 0;
@@ -45,5 +49,19 @@ private:
     uint32_t rtc_cycles = 0;
     uint8_t quarters = 0;
     bool initialized = false;
+    bool wall_clock_initialized = false;
+    std::chrono::steady_clock::time_point last_wall_tick = {};
+    std::chrono::steady_clock::time_point ignore_rtc_writes_until = {};
     std::tm last_time = {};
+    time_t virtual_time = 0;
+
+    void SetRegistersFromVirtualTime();
+    void SyncVirtualTimeFromRegisters();
+    bool CanAcceptRtcWrites() const;
+    void TickQuarter();
+    void WriteRTCCR1(uint8_t value);
+    void WriteSeconds(uint8_t value);
+    void WriteMinutes(uint8_t value);
+    void WriteHours(uint8_t value);
+    void WriteWeekday(uint8_t value);
 };

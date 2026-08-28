@@ -1,5 +1,7 @@
 #pragma once
+#include <istream>
 #include <memory>
+#include <ostream>
 #include <unordered_map>
 #include <vector>
 
@@ -152,6 +154,8 @@ public:
         uint8_t pin_index);
 
     void Cycle(uint8_t cycles);
+    void SaveEmulatorState(std::ostream& stream) const;
+    bool LoadEmulatorState(std::istream& stream);
 
     PDRB_t PDRB = {};
     PMRB_t PMRB = {};

@@ -191,3 +191,14 @@ std::shared_ptr<Peripheral> SSU::ActivePeripheral()
 
     return nullptr;
 }
+
+void SSU::SaveEmulatorState(std::ostream& stream) const
+{
+    stream.write(reinterpret_cast<const char*>(&ssu_cycles), sizeof(ssu_cycles));
+}
+
+bool SSU::LoadEmulatorState(std::istream& stream)
+{
+    stream.read(reinterpret_cast<char*>(&ssu_cycles), sizeof(ssu_cycles));
+    return static_cast<bool>(stream);
+}

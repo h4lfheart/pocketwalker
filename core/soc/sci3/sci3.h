@@ -1,7 +1,9 @@
 #pragma once
 
+#include <istream>
 #include <memory>
 #include <mutex>
+#include <ostream>
 #include <queue>
 
 #include "core/soc/memory/regions/io.h"
@@ -86,6 +88,8 @@ public:
 
     void OnTransmitIR(const EventHandlerCallback<uint8_t>& callback);
     void ReceiveIR(uint8_t data);
+    void SaveEmulatorState(std::ostream& stream);
+    bool LoadEmulatorState(std::istream& stream);
 
     SMR_t SMR = {};
     SSR_t SSR = {};

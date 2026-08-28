@@ -30,6 +30,10 @@ int main(int argc, char* argv[])
              .help("Runs in server mode.")
              .flag();
 
+    arguments.add_argument("--no-menu")
+             .help("Hides the main window menu bar.")
+             .flag();
+
     arguments.add_argument("--ip")
              .help("IP address to connect to (client mode).");
 
@@ -54,6 +58,7 @@ int main(int argc, char* argv[])
     args.rom_path = arguments.present<std::string>("rom");
     args.save_path = arguments.present<std::string>("save");
     args.server_mode = arguments.get<bool>("--server");
+    args.no_menu = arguments.get<bool>("--no-menu");
     args.host = arguments.present<std::string>("--ip");
     args.port = arguments.present<uint16_t>("--port");
 

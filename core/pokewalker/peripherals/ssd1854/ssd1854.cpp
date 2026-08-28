@@ -1,5 +1,6 @@
 #include "ssd1854.h"
 
+#include <algorithm>
 #include <print>
 
 #include "core/utils/logger.h"
@@ -106,4 +107,35 @@ void SSD1854::HandleCommand(uint8_t data)
         Log::Warn("Invalid SSD1854 Command: 0x{:02X}", data);
         state = SSD1854State::IDLE;
     }
+}
+
+void SSD1854::SaveEmulatorState(std::ostream& stream) const
+{
+    const uint8_t state_value = static_cast<uint8_t>(state);
+    stream.write(reinterpret_cast<const char*>(&state_value), sizeof(state_value));
+    stream.write(reinterpret_cast<const char*>(&column), sizeof(column));
+    stream.write(reinterpret_cast<const char*>(&offset), sizeof(offset));
+    stream.write(reinterpret_cast<const char*>(&page), sizeof(page));
+    stream.write(reinterpret_cast<const char*>(&is_data_mode), sizeof(is_data_mode));
+}
+
+bool SSD1854::LoadEmulatorState(std::istream& stream)
+{
+    uint8_t state_value = 0;
+    stream.read(reinterpret_cast<char*>(&state_value), sizeof(state_value));
+    stream.read(reinterpret_cast<char*>(&column), sizeof(column));
+    stream.read(reinterpret_cast<char*>(&offset), sizeof(offset));
+    stream.read(reinterpret_cast<char*>(&page), sizeof(page));
+    stream.read(reinterpret_cast<char*>(&is_data_mode), sizeof(is_data_mode));
+    if (!stream)
+        return false;
+
+    if (state_value > static_cast<uint8_t>(SSD1854State::SET_PAGE_OFFSET))
+        state_value = static_cast<uint8_t>(SSD1854State::IDLE);
+
+    state = static_cast<SSD1854State>(state_value);
+    column = std::min<uint8_t>(column, SSD1854_TOTAL_COLUMNS);
+    offset %= SSD1854_COLUMN_SIZE;
+    page %= SSD1854_TOTAL_PAGES;
+    return true;
 }

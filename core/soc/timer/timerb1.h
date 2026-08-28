@@ -1,5 +1,7 @@
 #pragma once
+#include <istream>
 #include <memory>
+#include <ostream>
 
 #include "core/memory/interface.h"
 #include "core/soc/interrupts/interrupts.h"
@@ -28,6 +30,8 @@ public:
     void RegisterIOHandlers(const std::shared_ptr<IO>& io);
 
     void Cycle(uint8_t cycles);
+    void SaveEmulatorState(std::ostream& stream) const;
+    bool LoadEmulatorState(std::istream& stream);
 
     TMB1_t TMB1 = {};
     uint8_t TCB1 = 0;

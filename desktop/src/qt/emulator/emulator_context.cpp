@@ -15,6 +15,11 @@ EmulatorContext::EmulatorContext(const std::string& rom_path, const std::string&
 
     emu.emplace(rom_buffer);
     loadSave();
+    if (!this->save_path.empty())
+    {
+        emu->LoadRtcState(this->save_path + ".rtc");
+        emu->LoadEmulatorState(this->save_path + ".state");
+    }
 
     audio = std::make_unique<QtAudioSystem>();
     emu->OnSamplePushed([this](BuzzerInformation info)
@@ -87,4 +92,6 @@ void EmulatorContext::writeSave()
     const EepromBuffer buf = emu->GetEepromBuffer();
     std::ofstream f(save_path, std::ios::binary);
     f.write(reinterpret_cast<const char*>(buf.data()), buf.size());
+    emu->SaveRtcState(save_path + ".rtc");
+    emu->SaveEmulatorState(save_path + ".state");
 }

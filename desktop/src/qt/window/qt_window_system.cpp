@@ -24,6 +24,8 @@ QtWindowSystem::QtWindowSystem(ApplicationArguments args, QWidget* parent)
     : QMainWindow(parent), args(args)
 {
     setWindowTitle("PocketWalker");
+    if (!args.no_menu)
+    {
     menuBar()->setNativeMenuBar(true);
 #if WIN32
     if (QApplication::style()->name() == "windows11")
@@ -154,6 +156,7 @@ QtWindowSystem::QtWindowSystem(ApplicationArguments args, QWidget* parent)
         dlg->setAttribute(Qt::WA_DeleteOnClose);
         dlg->exec();
     });
+    }
 
     display = new DisplayWidget(this);
     setCentralWidget(display);
@@ -264,7 +267,8 @@ void QtWindowSystem::resetEmulator()
     const std::string path = context->romPath();
     launchEmulator(path);
 
-    context->emulator().UseSyntheticSteps(synthetic_steps_action->isChecked());
+    if (synthetic_steps_action)
+        context->emulator().UseSyntheticSteps(synthetic_steps_action->isChecked());
 }
 
 void QtWindowSystem::launchEmulator(const std::string& rom_path, const std::string& save_path)
@@ -302,13 +306,28 @@ void QtWindowSystem::shutdownEmulator()
 
 void QtWindowSystem::setEmulatorActionsEnabled(bool enabled)
 {
-    import_save_action->setEnabled(enabled);
-    reset_action->setEnabled(enabled);
-    pause_action->setEnabled(enabled);
-    stop_action->setEnabled(enabled);
-    synthetic_steps_action->setEnabled(enabled);
-    set_watts_action->setEnabled(enabled);
-    set_session_steps_action->setEnabled(enabled);
+    if (import_save_action) import_save_action->setEnabled(enabled);
+    if (reset_action) reset_action->setEnabled(enabled);
+    if (pause_action) pause_action->setEnabled(enabled);
+    if (stop_action) stop_action->setEnabled(enabled);
+    if (synthetic_steps_action) synthetic_steps_action->setEnabled(enabled);
+    if (set_watts_action) set_watts_action->setEnabled(enabled);
+    if (set_session_steps_action) set_session_steps_action->setEnabled(enabled);
+}
+
+void QtWindowSystem::releaseHeldInputs()
+{
+    if (!context)
+        return;
+
+    context->emulator().ReleaseButton(ButtonType::LEFT);
+    context->emulator().ReleaseButton(ButtonType::RIGHT);
+    context->emulator().ReleaseButton(ButtonType::CENTER);
+    context->emulator().UseFastMode(false);
+    context->emulator().UseSyntheticSteps(false);
+
+    if (synthetic_steps_action)
+        synthetic_steps_action->setChecked(false);
 }
 
 void QtWindowSystem::addToRecentROMs(const std::string& path)
@@ -324,6 +343,9 @@ void QtWindowSystem::addToRecentROMs(const std::string& path)
 
 void QtWindowSystem::updateRecentROMsMenu()
 {
+    if (!recent_roms_menu)
+        return;
+
     recent_roms_menu->clear();
 
     const auto& recent = AppSettings::instance.general.recent_roms;
@@ -392,7 +414,8 @@ void QtWindowSystem::keyPressEvent(QKeyEvent* event)
     else if (key == controls.key_synthetic_steps_hold)
     {
         context->emulator().UseSyntheticSteps(true);
-        synthetic_steps_action->setChecked(true);
+        if (synthetic_steps_action)
+            synthetic_steps_action->setChecked(true);
     }
     else QMainWindow::keyPressEvent(event);
 }
@@ -415,13 +438,23 @@ void QtWindowSystem::keyReleaseEvent(QKeyEvent* event)
     else if (key == controls.key_synthetic_steps_hold)
     {
         context->emulator().UseSyntheticSteps(false);
-        synthetic_steps_action->setChecked(false);
+        if (synthetic_steps_action)
+            synthetic_steps_action->setChecked(false);
     }
     else QMainWindow::keyReleaseEvent(event);
 }
 
+void QtWindowSystem::changeEvent(QEvent* event)
+{
+    if (event->type() == QEvent::ActivationChange && !isActiveWindow())
+        releaseHeldInputs();
+
+    QMainWindow::changeEvent(event);
+}
+
 void QtWindowSystem::closeEvent(QCloseEvent* event)
 {
+    releaseHeldInputs();
     shutdownEmulator();
     event->accept();
 }

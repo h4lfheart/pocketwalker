@@ -1,5 +1,7 @@
 #pragma once
 #include <array>
+#include <istream>
+#include <ostream>
 
 #include "core/soc/ssu/peripheral.h"
 
@@ -30,6 +32,8 @@ public:
     void Receive(uint8_t data) override;
     uint8_t Transmit() override;
     void Reset() override;
+    void SaveEmulatorState(std::ostream& stream) const;
+    bool LoadEmulatorState(std::istream& stream);
 
     EepromBuffer eeprom = {};
 

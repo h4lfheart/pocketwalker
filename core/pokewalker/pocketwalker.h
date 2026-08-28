@@ -3,6 +3,7 @@
 #include <atomic>
 #include <cstdint>
 #include <memory>
+#include <string>
 
 #include "core/soc/h838606.h"
 #include "core/utils/event_handler.h"
@@ -52,6 +53,13 @@ public:
 
     EepromBuffer GetEepromBuffer() const;
     void SetEepromBuffer(const EepromBuffer& buffer) const;
+    uint32_t GetVolatileStepCount() const;
+    uint16_t GetVolatileWatts() const;
+    void RestoreVolatileCounters(uint32_t steps, uint16_t watts) const;
+    void LoadRtcState(const std::string& path) const;
+    void SaveRtcState(const std::string& path) const;
+    bool LoadEmulatorState(const std::string& path) const;
+    void SaveEmulatorState(const std::string& path) const;
 
 private:
     void CyclePeripherals(uint8_t cycles) const;
