@@ -9,10 +9,18 @@
 #include <iomanip>
 #include <sstream>
 #include <string>
+#include <vector>
 #include "desktop/src/qt/settings/app_settings.h"
 
 namespace
 {
+using ByteBuffer = std::vector<uint8_t>;
+
+constexpr std::array<char, 8> PWSAV_MAGIC = {'P', 'W', 'S', 'A', 'V', '0', '0', '1'};
+constexpr std::array<char, 4> PWSAV_CHUNK_EEPROM = {'E', 'E', 'P', '1'};
+constexpr std::array<char, 4> PWSAV_CHUNK_RTC = {'R', 'T', 'C', '1'};
+constexpr std::array<char, 4> PWSAV_CHUNK_STATE = {'S', 'T', 'A', '1'};
+constexpr uint64_t PWSAV_MAX_CHUNK_SIZE = 64ULL * 1024ULL * 1024ULL;
 constexpr std::streamoff STATE_EEPROM_OFFSET = 44;
 constexpr std::streamoff STATE_RAM_TOTAL_STEPS_OFFSET = 0x100BB;
 constexpr std::streamoff STATE_RAM_TOTAL_DAYS_OFFSET = 0x100C7;
@@ -21,6 +29,185 @@ constexpr size_t EEPROM_TOTAL_STEPS_OFFSET = 0x156;
 constexpr size_t EEPROM_TOTAL_DAYS_OFFSET = 0x162;
 constexpr size_t EEPROM_HISTORY_STEPS_OFFSET = 0xCEF0;
 constexpr size_t EEPROM_HISTORY_DAYS = 7;
+
+std::string FormatLocalDate(std::time_t time);
+
+template <typename T>
+void WritePwsavValue(std::ostream& stream, const T& value)
+{
+    stream.write(reinterpret_cast<const char*>(&value), sizeof(T));
+}
+
+template <typename T>
+bool ReadPwsavValue(std::istream& stream, T& value)
+{
+    stream.read(reinterpret_cast<char*>(&value), sizeof(T));
+    return static_cast<bool>(stream);
+}
+
+std::filesystem::path PwsavPathForSavePath(const std::string& save_path)
+{
+    std::filesystem::path path(save_path);
+    if (path.extension() != ".pwsav")
+        path.replace_extension(".pwsav");
+    return path;
+}
+
+uint32_t ReadU32BEFromBytes(const ByteBuffer& bytes, const size_t offset)
+{
+    if (offset + sizeof(uint32_t) > bytes.size())
+        return 0;
+
+    return (static_cast<uint32_t>(bytes[offset]) << 24) |
+           (static_cast<uint32_t>(bytes[offset + 1]) << 16) |
+           (static_cast<uint32_t>(bytes[offset + 2]) << 8) |
+           static_cast<uint32_t>(bytes[offset + 3]);
+}
+
+uint16_t ReadU16BEFromBytes(const ByteBuffer& bytes, const size_t offset)
+{
+    if (offset + sizeof(uint16_t) > bytes.size())
+        return 0;
+
+    return static_cast<uint16_t>((bytes[offset] << 8) | bytes[offset + 1]);
+}
+
+uint16_t ReadDaysFromEepromBuffer(const EepromBuffer& buffer)
+{
+    return static_cast<uint16_t>((buffer[EEPROM_TOTAL_DAYS_OFFSET] << 8) |
+                                 buffer[EEPROM_TOTAL_DAYS_OFFSET + 1]);
+}
+
+uint16_t ReadDaysFromStateBytes(const ByteBuffer& state)
+{
+    return ReadU16BEFromBytes(state, static_cast<size_t>(STATE_RAM_TOTAL_DAYS_OFFSET));
+}
+
+uint32_t ReadU32BEFromEepromBuffer(const EepromBuffer& buffer, const size_t offset)
+{
+    if (offset + sizeof(uint32_t) > buffer.size())
+        return 0;
+
+    return (static_cast<uint32_t>(buffer[offset]) << 24) |
+           (static_cast<uint32_t>(buffer[offset + 1]) << 16) |
+           (static_cast<uint32_t>(buffer[offset + 2]) << 8) |
+           static_cast<uint32_t>(buffer[offset + 3]);
+}
+
+std::string ReadHistoryFromEepromBuffer(const EepromBuffer& buffer)
+{
+    std::ostringstream stream;
+    for (size_t i = 0; i < EEPROM_HISTORY_DAYS; i++)
+    {
+        if (i > 0)
+            stream << ",";
+
+        stream << "-" << (i + 1) << "="
+               << ReadU32BEFromEepromBuffer(buffer, EEPROM_HISTORY_STEPS_OFFSET + i * sizeof(uint32_t));
+    }
+
+    return stream.str();
+}
+
+struct PwsavData
+{
+    bool has_eeprom = false;
+    bool has_rtc = false;
+    bool has_state = false;
+    EepromBuffer eeprom = {};
+    ByteBuffer rtc = {};
+    ByteBuffer state = {};
+};
+
+bool ReadPwsavFile(const std::filesystem::path& path, PwsavData& data)
+{
+    std::ifstream file(path, std::ios::binary);
+    if (!file)
+        return false;
+
+    std::array<char, PWSAV_MAGIC.size()> magic = {};
+    file.read(magic.data(), magic.size());
+    if (!file || magic != PWSAV_MAGIC)
+        return false;
+
+    while (file.peek() != std::char_traits<char>::eof())
+    {
+        std::array<char, 4> chunk_id = {};
+        uint64_t chunk_size = 0;
+        file.read(chunk_id.data(), chunk_id.size());
+        if (!ReadPwsavValue(file, chunk_size))
+            return false;
+
+        if (chunk_size > PWSAV_MAX_CHUNK_SIZE)
+            return false;
+
+        ByteBuffer chunk(static_cast<size_t>(chunk_size));
+        if (!chunk.empty())
+            file.read(reinterpret_cast<char*>(chunk.data()), static_cast<std::streamsize>(chunk.size()));
+        if (!file)
+            return false;
+
+        if (chunk_id == PWSAV_CHUNK_EEPROM)
+        {
+            if (chunk.size() != data.eeprom.size())
+                return false;
+            std::copy(chunk.begin(), chunk.end(), data.eeprom.begin());
+            data.has_eeprom = true;
+        }
+        else if (chunk_id == PWSAV_CHUNK_RTC)
+        {
+            data.rtc = std::move(chunk);
+            data.has_rtc = true;
+        }
+        else if (chunk_id == PWSAV_CHUNK_STATE)
+        {
+            data.state = std::move(chunk);
+            data.has_state = true;
+        }
+    }
+
+    return data.has_eeprom;
+}
+
+void WritePwsavChunk(std::ostream& stream, const std::array<char, 4>& chunk_id, const uint8_t* data, const size_t size)
+{
+    stream.write(chunk_id.data(), chunk_id.size());
+    WritePwsavValue(stream, static_cast<uint64_t>(size));
+    if (size > 0)
+        stream.write(reinterpret_cast<const char*>(data), static_cast<std::streamsize>(size));
+}
+
+void WritePwsavChunk(std::ostream& stream, const std::array<char, 4>& chunk_id, const std::string& data)
+{
+    WritePwsavChunk(stream, chunk_id, reinterpret_cast<const uint8_t*>(data.data()), data.size());
+}
+
+bool StateEepromMatchesSave(const EepromBuffer& save, const ByteBuffer& state)
+{
+    if (state.size() < static_cast<size_t>(STATE_EEPROM_OFFSET) + save.size())
+        return false;
+
+    return std::equal(save.begin(), save.end(), state.begin() + static_cast<std::ptrdiff_t>(STATE_EEPROM_OFFSET));
+}
+
+bool StateRamDaysMatchSave(const EepromBuffer& save, const ByteBuffer& state)
+{
+    return ReadDaysFromEepromBuffer(save) == ReadDaysFromStateBytes(state);
+}
+
+std::string ReadRtcLastActiveDateFromBytes(const ByteBuffer& rtc)
+{
+    if (rtc.size() < 32)
+        return {};
+
+    const std::string magic(reinterpret_cast<const char*>(rtc.data()), 8);
+    if (magic != "PWRTC002")
+        return {};
+
+    int64_t saved_host_time = 0;
+    std::copy_n(rtc.data() + 16, sizeof(saved_host_time), reinterpret_cast<uint8_t*>(&saved_host_time));
+    return FormatLocalDate(static_cast<std::time_t>(saved_host_time));
+}
 
 uint32_t ReadU32BEFromFile(const std::string& path, const std::streamoff offset)
 {
@@ -175,6 +362,10 @@ std::string ReadRtcLastActiveDate(const std::string& save_path)
     if (save_path.empty())
         return {};
 
+    PwsavData pwsav = {};
+    if (ReadPwsavFile(PwsavPathForSavePath(save_path), pwsav) && pwsav.has_rtc)
+        return ReadRtcLastActiveDateFromBytes(pwsav.rtc);
+
     std::ifstream file(save_path + ".rtc", std::ios::binary);
     if (!file)
         return {};
@@ -210,6 +401,94 @@ void AppendRtcDebug(const std::string& save_path, const std::string& message)
 
     log << FormatDebugTime() << " | context | " << message << '\n';
 }
+
+bool LoadPwsavRuntimeState(PocketWalker& emu, const std::string& save_path)
+{
+    PwsavData pwsav = {};
+    const std::filesystem::path pwsav_path = PwsavPathForSavePath(save_path);
+    if (!ReadPwsavFile(pwsav_path, pwsav) || !pwsav.has_state || !pwsav.has_rtc)
+        return false;
+
+    const bool eeprom_matches = StateEepromMatchesSave(pwsav.eeprom, pwsav.state);
+    const bool ram_days_match = StateRamDaysMatchSave(pwsav.eeprom, pwsav.state);
+    AppendRtcDebug(save_path, "pwsav_path=" + pwsav_path.string());
+    AppendRtcDebug(save_path, "pwsav_exists=true eeprom_matches=" + std::string(eeprom_matches ? "true" : "false") +
+                              " ram_days_match=" + std::string(ram_days_match ? "true" : "false") +
+                              " save_days=" + std::to_string(ReadDaysFromEepromBuffer(pwsav.eeprom)) +
+                              " state_days=" + std::to_string(ReadDaysFromStateBytes(pwsav.state)) +
+                              " save_total_steps=" + std::to_string(ReadU32BEFromEepromBuffer(pwsav.eeprom, EEPROM_TOTAL_STEPS_OFFSET)) +
+                              " state_total_steps=" + std::to_string(ReadU32BEFromBytes(pwsav.state, static_cast<size_t>(STATE_RAM_TOTAL_STEPS_OFFSET))) +
+                              " state_session_steps=" + std::to_string(ReadU32BEFromBytes(pwsav.state, static_cast<size_t>(STATE_RAM_SESSION_STEPS_OFFSET))) +
+                              " save_history=[" + ReadHistoryFromEepromBuffer(pwsav.eeprom) + "]");
+
+    if (!eeprom_matches || !ram_days_match)
+    {
+        AppendRtcDebug(save_path, "pwsav state validation failed; save-state/rtc catch-up skipped");
+        return false;
+    }
+
+    std::string state_bytes(reinterpret_cast<const char*>(pwsav.state.data()), pwsav.state.size());
+    std::istringstream state_stream(state_bytes, std::ios::in | std::ios::binary);
+    if (!emu.LoadEmulatorState(state_stream))
+    {
+        AppendRtcDebug(save_path, "pwsav emulator state load failed");
+        return false;
+    }
+
+    std::string rtc_bytes(reinterpret_cast<const char*>(pwsav.rtc.data()), pwsav.rtc.size());
+    std::istringstream rtc_stream(rtc_bytes, std::ios::in | std::ios::binary);
+    emu.LoadRtcState(rtc_stream, pwsav_path.parent_path());
+    emu.ApplyRtcCatchUpOverflowDays();
+    emu.PrepareRtcCatchUp();
+    AppendRtcDebug(save_path, "pwsav state validation passed; loaded state and rtc metadata");
+    return true;
+}
+
+bool WritePwsavFile(const std::string& save_path, const PocketWalker& emu)
+{
+    const std::filesystem::path pwsav_path = PwsavPathForSavePath(save_path);
+    const std::filesystem::path temp_path = pwsav_path.string() + ".tmp";
+    const std::filesystem::path save_directory = pwsav_path.parent_path();
+
+    const EepromBuffer eeprom = emu.GetEepromBuffer();
+
+    std::ostringstream rtc_stream(std::ios::out | std::ios::binary);
+    emu.SaveRtcState(rtc_stream, save_directory);
+    const std::string rtc_bytes = rtc_stream.str();
+
+    std::ostringstream state_stream(std::ios::out | std::ios::binary);
+    emu.SaveEmulatorState(state_stream);
+    const std::string state_bytes = state_stream.str();
+
+    std::ofstream file(temp_path, std::ios::binary);
+    if (!file)
+        return false;
+
+    file.write(PWSAV_MAGIC.data(), PWSAV_MAGIC.size());
+    WritePwsavChunk(file, PWSAV_CHUNK_EEPROM, eeprom.data(), eeprom.size());
+    WritePwsavChunk(file, PWSAV_CHUNK_RTC, rtc_bytes);
+    WritePwsavChunk(file, PWSAV_CHUNK_STATE, state_bytes);
+    file.close();
+
+    if (!file)
+    {
+        std::error_code ignored;
+        std::filesystem::remove(temp_path, ignored);
+        return false;
+    }
+
+    std::error_code error;
+    std::filesystem::remove(pwsav_path, error);
+    error.clear();
+    std::filesystem::rename(temp_path, pwsav_path, error);
+    if (error)
+    {
+        std::filesystem::remove(temp_path, error);
+        return false;
+    }
+
+    return true;
+}
 }
 
 EmulatorContext::EmulatorContext(const std::string& rom_path, const std::string& save_path,
@@ -227,34 +506,38 @@ EmulatorContext::EmulatorContext(const std::string& rom_path, const std::string&
     loadSave();
     if (!this->save_path.empty())
     {
-        const std::string state_path = this->save_path + ".state";
-        const bool eeprom_matches = StateEepromMatchesSave(this->save_path, state_path);
-        const bool ram_days_match = StateRamDaysMatchSave(this->save_path, state_path);
         AppendRtcDebug(this->save_path, "----- EmulatorContext launch -----");
         AppendRtcDebug(this->save_path, "save_path=" + this->save_path);
-        AppendRtcDebug(this->save_path, "state_path=" + state_path);
-        AppendRtcDebug(this->save_path, "state_exists=" + std::string(std::filesystem::exists(state_path) ? "true" : "false") +
-                                      " save_exists=" + std::string(std::filesystem::exists(this->save_path) ? "true" : "false") +
-                                      " eeprom_matches=" + std::string(eeprom_matches ? "true" : "false") +
-                                      " ram_days_match=" + std::string(ram_days_match ? "true" : "false") +
-                                      " save_days=" + std::to_string(ReadDaysFromEepromFile(this->save_path)) +
-                                      " state_days=" + std::to_string(ReadDaysFromStateRam(state_path)) +
-                                      " save_total_steps=" + std::to_string(ReadU32BEFromFile(this->save_path, EEPROM_TOTAL_STEPS_OFFSET)) +
-                                      " state_total_steps=" + std::to_string(ReadU32BEFromFile(state_path, STATE_RAM_TOTAL_STEPS_OFFSET)) +
-                                      " state_session_steps=" + std::to_string(ReadU32BEFromFile(state_path, STATE_RAM_SESSION_STEPS_OFFSET)) +
-                                      " save_history=[" + ReadHistoryFromEepromFile(this->save_path) + "]");
 
-        if (eeprom_matches && ram_days_match)
+        if (!LoadPwsavRuntimeState(*emu, this->save_path))
         {
-            AppendRtcDebug(this->save_path, "state validation passed; loading state and rtc metadata");
-            emu->LoadEmulatorState(state_path);
-            emu->LoadRtcState(this->save_path + ".rtc");
-            emu->ApplyRtcCatchUpOverflowDays();
-            emu->PrepareRtcCatchUp();
-        }
-        else
-        {
-            AppendRtcDebug(this->save_path, "state validation failed; save-state/rtc catch-up skipped");
+            const std::string state_path = this->save_path + ".state";
+            const bool eeprom_matches = StateEepromMatchesSave(this->save_path, state_path);
+            const bool ram_days_match = StateRamDaysMatchSave(this->save_path, state_path);
+            AppendRtcDebug(this->save_path, "state_path=" + state_path);
+            AppendRtcDebug(this->save_path, "state_exists=" + std::string(std::filesystem::exists(state_path) ? "true" : "false") +
+                                          " save_exists=" + std::string(std::filesystem::exists(this->save_path) ? "true" : "false") +
+                                          " eeprom_matches=" + std::string(eeprom_matches ? "true" : "false") +
+                                          " ram_days_match=" + std::string(ram_days_match ? "true" : "false") +
+                                          " save_days=" + std::to_string(ReadDaysFromEepromFile(this->save_path)) +
+                                          " state_days=" + std::to_string(ReadDaysFromStateRam(state_path)) +
+                                          " save_total_steps=" + std::to_string(ReadU32BEFromFile(this->save_path, EEPROM_TOTAL_STEPS_OFFSET)) +
+                                          " state_total_steps=" + std::to_string(ReadU32BEFromFile(state_path, STATE_RAM_TOTAL_STEPS_OFFSET)) +
+                                          " state_session_steps=" + std::to_string(ReadU32BEFromFile(state_path, STATE_RAM_SESSION_STEPS_OFFSET)) +
+                                          " save_history=[" + ReadHistoryFromEepromFile(this->save_path) + "]");
+
+            if (eeprom_matches && ram_days_match)
+            {
+                AppendRtcDebug(this->save_path, "sidecar state validation passed; loading state and rtc metadata");
+                emu->LoadEmulatorState(state_path);
+                emu->LoadRtcState(this->save_path + ".rtc");
+                emu->ApplyRtcCatchUpOverflowDays();
+                emu->PrepareRtcCatchUp();
+            }
+            else
+            {
+                AppendRtcDebug(this->save_path, "sidecar state validation failed; save-state/rtc catch-up skipped");
+            }
         }
     }
 
@@ -320,6 +603,13 @@ EmulatorContext::~EmulatorContext()
 
 void EmulatorContext::loadSave()
 {
+    PwsavData pwsav = {};
+    if (!save_path.empty() && ReadPwsavFile(PwsavPathForSavePath(save_path), pwsav) && pwsav.has_eeprom)
+    {
+        emu->SetEepromBuffer(pwsav.eeprom);
+        return;
+    }
+
     if (!std::filesystem::exists(save_path))
         return;
 
@@ -343,14 +633,10 @@ void EmulatorContext::writeSave()
                                              (static_cast<uint32_t>(emu->GetEepromBuffer()[EEPROM_TOTAL_STEPS_OFFSET + 2]) << 8) |
                                              static_cast<uint32_t>(emu->GetEepromBuffer()[EEPROM_TOTAL_STEPS_OFFSET + 3])));
     const EepromBuffer buf = emu->GetEepromBuffer();
-    std::ofstream f(save_path, std::ios::binary);
-    f.write(reinterpret_cast<const char*>(buf.data()), buf.size());
-    emu->SaveEmulatorState(save_path + ".state");
-    emu->SaveRtcState(save_path + ".rtc");
-    AppendRtcDebug(save_path, "writeSave end save_days=" + std::to_string(ReadDaysFromEepromFile(save_path)) +
-                              " state_days=" + std::to_string(ReadDaysFromStateRam(save_path + ".state")) +
-                              " save_total_steps=" + std::to_string(ReadU32BEFromFile(save_path, EEPROM_TOTAL_STEPS_OFFSET)) +
-                              " state_total_steps=" + std::to_string(ReadU32BEFromFile(save_path + ".state", STATE_RAM_TOTAL_STEPS_OFFSET)) +
-                              " state_session_steps=" + std::to_string(ReadU32BEFromFile(save_path + ".state", STATE_RAM_SESSION_STEPS_OFFSET)) +
-                              " save_history=[" + ReadHistoryFromEepromFile(save_path) + "]");
+    const bool saved = WritePwsavFile(save_path, *emu);
+    AppendRtcDebug(save_path, "writeSave end pwsav_saved=" + std::string(saved ? "true" : "false") +
+                              " pwsav_path=" + PwsavPathForSavePath(save_path).string() +
+                              " eeprom_days=" + std::to_string(ReadDaysFromEepromBuffer(buf)) +
+                              " eeprom_total_steps=" + std::to_string(ReadU32BEFromEepromBuffer(buf, EEPROM_TOTAL_STEPS_OFFSET)) +
+                              " eeprom_history=[" + ReadHistoryFromEepromBuffer(buf) + "]");
 }

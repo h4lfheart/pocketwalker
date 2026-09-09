@@ -405,9 +405,19 @@ void PocketWalker::LoadRtcState(const std::string& path) const
     soc->rtc->LoadState(path);
 }
 
+void PocketWalker::LoadRtcState(std::istream& stream, const std::filesystem::path& base_directory) const
+{
+    soc->rtc->LoadState(stream, base_directory);
+}
+
 void PocketWalker::SaveRtcState(const std::string& path) const
 {
     soc->rtc->SaveState(path);
+}
+
+void PocketWalker::SaveRtcState(std::ostream& stream, const std::filesystem::path& base_directory) const
+{
+    soc->rtc->SaveState(stream, base_directory);
 }
 
 bool PocketWalker::IsRtcCatchUpActive() const
@@ -472,40 +482,45 @@ bool PocketWalker::LoadEmulatorState(const std::string& path) const
     if (!f)
         return false;
 
+    return LoadEmulatorState(f);
+}
+
+bool PocketWalker::LoadEmulatorState(std::istream& stream) const
+{
     std::array<char, STATE_MAGIC.size()> magic = {};
-    f.read(magic.data(), magic.size());
-    if (!f || magic != STATE_MAGIC)
+    stream.read(magic.data(), magic.size());
+    if (!stream || magic != STATE_MAGIC)
         return false;
 
-    if (!ReadCpuState(f, soc->cpu))
+    if (!ReadCpuState(stream, soc->cpu))
         return false;
 
-    f.read(reinterpret_cast<char*>(m95512->eeprom.data()), m95512->eeprom.size());
-    if (!f)
+    stream.read(reinterpret_cast<char*>(m95512->eeprom.data()), m95512->eeprom.size());
+    if (!stream)
         return false;
 
-    if (!m95512->LoadEmulatorState(f))
+    if (!m95512->LoadEmulatorState(stream))
         return false;
 
-    if (!bma150->LoadEmulatorState(f))
+    if (!bma150->LoadEmulatorState(stream))
         return false;
 
-    if (!ReadMemoryRange(f, soc->memory, RAM_START, RAM_SIZE))
+    if (!ReadMemoryRange(stream, soc->memory, RAM_START, RAM_SIZE))
         return false;
 
-    if (!ReadMemoryRange(f, soc->memory, IO_LOW_START, IO_LOW_SIZE))
+    if (!ReadMemoryRange(stream, soc->memory, IO_LOW_START, IO_LOW_SIZE))
         return false;
 
-    if (!ReadMemoryRange(f, soc->memory, IO_HIGH_START, IO_HIGH_SIZE))
+    if (!ReadMemoryRange(stream, soc->memory, IO_HIGH_START, IO_HIGH_SIZE))
         return false;
 
-    if (!ReadValue(f, soc->CKSTPR1.VALUE) || !ReadValue(f, soc->CKSTPR2.VALUE))
+    if (!ReadValue(stream, soc->CKSTPR1.VALUE) || !ReadValue(stream, soc->CKSTPR2.VALUE))
         return false;
 
-    if (!ReadValue(f, soc->interrupts->IENR1.VALUE) || !ReadValue(f, soc->interrupts->IENR2.VALUE) ||
-        !ReadValue(f, soc->interrupts->IRR1.VALUE) || !ReadValue(f, soc->interrupts->IRR2.VALUE) ||
-        !ReadValue(f, soc->interrupts->RTCFLG.VALUE) || !ReadValue(f, soc->interrupts->RTCCR2.VALUE) ||
-        !ReadValue(f, soc->interrupts->TIERW.VALUE) || !ReadValue(f, soc->interrupts->TSRW.VALUE))
+    if (!ReadValue(stream, soc->interrupts->IENR1.VALUE) || !ReadValue(stream, soc->interrupts->IENR2.VALUE) ||
+        !ReadValue(stream, soc->interrupts->IRR1.VALUE) || !ReadValue(stream, soc->interrupts->IRR2.VALUE) ||
+        !ReadValue(stream, soc->interrupts->RTCFLG.VALUE) || !ReadValue(stream, soc->interrupts->RTCCR2.VALUE) ||
+        !ReadValue(stream, soc->interrupts->TIERW.VALUE) || !ReadValue(stream, soc->interrupts->TSRW.VALUE))
         return false;
 
     // RTC day/week flags in a save state are edge-triggered events, not durable
@@ -514,47 +529,47 @@ bool PocketWalker::LoadEmulatorState(const std::string& path) const
     soc->interrupts->RTCFLG.DYIFG = false;
     soc->interrupts->RTCFLG.WKIFG = false;
 
-    if (!ReadValue(f, soc->ssu->PDRB.VALUE) || !ReadValue(f, soc->ssu->PMRB.VALUE) ||
-        !ReadValue(f, soc->ssu->PFCR.VALUE) || !ReadValue(f, soc->ssu->SSMR.VALUE) ||
-        !ReadValue(f, soc->ssu->SSER.VALUE) || !ReadValue(f, soc->ssu->SSSR.VALUE) ||
-        !ReadValue(f, soc->ssu->SSRDR) || !ReadValue(f, soc->ssu->SSTDR))
+    if (!ReadValue(stream, soc->ssu->PDRB.VALUE) || !ReadValue(stream, soc->ssu->PMRB.VALUE) ||
+        !ReadValue(stream, soc->ssu->PFCR.VALUE) || !ReadValue(stream, soc->ssu->SSMR.VALUE) ||
+        !ReadValue(stream, soc->ssu->SSER.VALUE) || !ReadValue(stream, soc->ssu->SSSR.VALUE) ||
+        !ReadValue(stream, soc->ssu->SSRDR) || !ReadValue(stream, soc->ssu->SSTDR))
         return false;
 
-    if (!ReadValue(f, soc->sci3->SMR.VALUE) || !ReadValue(f, soc->sci3->SSR.VALUE) ||
-        !ReadValue(f, soc->sci3->SCR.VALUE) || !ReadValue(f, soc->sci3->IRCR.VALUE) ||
-        !ReadValue(f, soc->sci3->BRR) || !ReadValue(f, soc->sci3->TDR) ||
-        !ReadValue(f, soc->sci3->RDR))
+    if (!ReadValue(stream, soc->sci3->SMR.VALUE) || !ReadValue(stream, soc->sci3->SSR.VALUE) ||
+        !ReadValue(stream, soc->sci3->SCR.VALUE) || !ReadValue(stream, soc->sci3->IRCR.VALUE) ||
+        !ReadValue(stream, soc->sci3->BRR) || !ReadValue(stream, soc->sci3->TDR) ||
+        !ReadValue(stream, soc->sci3->RDR))
         return false;
-    if (!soc->sci3->LoadEmulatorState(f))
-        return false;
-
-    if (!ReadValue(f, soc->timer_b1->TMB1.VALUE) || !ReadValue(f, soc->timer_b1->TCB1) ||
-        !ReadValue(f, soc->timer_b1->TLB1))
-        return false;
-    if (!soc->timer_b1->LoadEmulatorState(f))
+    if (!soc->sci3->LoadEmulatorState(stream))
         return false;
 
-    if (!ReadValue(f, soc->timer_w->TMRW.VALUE) || !ReadValue(f, soc->timer_w->TCRW.VALUE))
+    if (!ReadValue(stream, soc->timer_b1->TMB1.VALUE) || !ReadValue(stream, soc->timer_b1->TCB1) ||
+        !ReadValue(stream, soc->timer_b1->TLB1))
         return false;
-    if (!soc->timer_w->LoadEmulatorState(f))
-        return false;
-
-    if (!ReadValue(f, soc->rtc->RTCCR1.VALUE) || !ReadValue(f, soc->rtc->RSECDR) ||
-        !ReadValue(f, soc->rtc->RMINDR) || !ReadValue(f, soc->rtc->RHRDR) ||
-        !ReadValue(f, soc->rtc->RWKDR))
-        return false;
-    if (!soc->rtc->LoadEmulatorState(f))
+    if (!soc->timer_b1->LoadEmulatorState(stream))
         return false;
 
-    if (!ReadValue(f, soc->adc->ADSR.VALUE) || !ReadValue(f, soc->adc->AMR.VALUE))
+    if (!ReadValue(stream, soc->timer_w->TMRW.VALUE) || !ReadValue(stream, soc->timer_w->TCRW.VALUE))
+        return false;
+    if (!soc->timer_w->LoadEmulatorState(stream))
         return false;
 
-    if (!ReadDisplayState(f, ssd1854))
+    if (!ReadValue(stream, soc->rtc->RTCCR1.VALUE) || !ReadValue(stream, soc->rtc->RSECDR) ||
+        !ReadValue(stream, soc->rtc->RMINDR) || !ReadValue(stream, soc->rtc->RHRDR) ||
+        !ReadValue(stream, soc->rtc->RWKDR))
         return false;
-    if (!ssd1854->LoadEmulatorState(f))
+    if (!soc->rtc->LoadEmulatorState(stream))
         return false;
 
-    if (!soc->ssu->LoadEmulatorState(f))
+    if (!ReadValue(stream, soc->adc->ADSR.VALUE) || !ReadValue(stream, soc->adc->AMR.VALUE))
+        return false;
+
+    if (!ReadDisplayState(stream, ssd1854))
+        return false;
+    if (!ssd1854->LoadEmulatorState(stream))
+        return false;
+
+    if (!soc->ssu->LoadEmulatorState(stream))
         return false;
 
     return true;
@@ -566,69 +581,74 @@ void PocketWalker::SaveEmulatorState(const std::string& path) const
     if (!f)
         return;
 
-    f.write(STATE_MAGIC.data(), STATE_MAGIC.size());
+    SaveEmulatorState(f);
+}
 
-    WriteCpuState(f, soc->cpu);
-    f.write(reinterpret_cast<const char*>(m95512->eeprom.data()), m95512->eeprom.size());
-    m95512->SaveEmulatorState(f);
-    bma150->SaveEmulatorState(f);
+void PocketWalker::SaveEmulatorState(std::ostream& stream) const
+{
+    stream.write(STATE_MAGIC.data(), STATE_MAGIC.size());
 
-    WriteMemoryRange(f, soc->memory, RAM_START, RAM_SIZE);
-    WriteMemoryRange(f, soc->memory, IO_LOW_START, IO_LOW_SIZE);
-    WriteMemoryRange(f, soc->memory, IO_HIGH_START, IO_HIGH_SIZE);
+    WriteCpuState(stream, soc->cpu);
+    stream.write(reinterpret_cast<const char*>(m95512->eeprom.data()), m95512->eeprom.size());
+    m95512->SaveEmulatorState(stream);
+    bma150->SaveEmulatorState(stream);
 
-    WriteValue(f, soc->CKSTPR1.VALUE);
-    WriteValue(f, soc->CKSTPR2.VALUE);
+    WriteMemoryRange(stream, soc->memory, RAM_START, RAM_SIZE);
+    WriteMemoryRange(stream, soc->memory, IO_LOW_START, IO_LOW_SIZE);
+    WriteMemoryRange(stream, soc->memory, IO_HIGH_START, IO_HIGH_SIZE);
 
-    WriteValue(f, soc->interrupts->IENR1.VALUE);
-    WriteValue(f, soc->interrupts->IENR2.VALUE);
-    WriteValue(f, soc->interrupts->IRR1.VALUE);
-    WriteValue(f, soc->interrupts->IRR2.VALUE);
-    WriteValue(f, soc->interrupts->RTCFLG.VALUE);
-    WriteValue(f, soc->interrupts->RTCCR2.VALUE);
-    WriteValue(f, soc->interrupts->TIERW.VALUE);
-    WriteValue(f, soc->interrupts->TSRW.VALUE);
+    WriteValue(stream, soc->CKSTPR1.VALUE);
+    WriteValue(stream, soc->CKSTPR2.VALUE);
 
-    WriteValue(f, soc->ssu->PDRB.VALUE);
-    WriteValue(f, soc->ssu->PMRB.VALUE);
-    WriteValue(f, soc->ssu->PFCR.VALUE);
-    WriteValue(f, soc->ssu->SSMR.VALUE);
-    WriteValue(f, soc->ssu->SSER.VALUE);
-    WriteValue(f, soc->ssu->SSSR.VALUE);
-    WriteValue(f, soc->ssu->SSRDR);
-    WriteValue(f, soc->ssu->SSTDR);
+    WriteValue(stream, soc->interrupts->IENR1.VALUE);
+    WriteValue(stream, soc->interrupts->IENR2.VALUE);
+    WriteValue(stream, soc->interrupts->IRR1.VALUE);
+    WriteValue(stream, soc->interrupts->IRR2.VALUE);
+    WriteValue(stream, soc->interrupts->RTCFLG.VALUE);
+    WriteValue(stream, soc->interrupts->RTCCR2.VALUE);
+    WriteValue(stream, soc->interrupts->TIERW.VALUE);
+    WriteValue(stream, soc->interrupts->TSRW.VALUE);
 
-    WriteValue(f, soc->sci3->SMR.VALUE);
-    WriteValue(f, soc->sci3->SSR.VALUE);
-    WriteValue(f, soc->sci3->SCR.VALUE);
-    WriteValue(f, soc->sci3->IRCR.VALUE);
-    WriteValue(f, soc->sci3->BRR);
-    WriteValue(f, soc->sci3->TDR);
-    WriteValue(f, soc->sci3->RDR);
-    soc->sci3->SaveEmulatorState(f);
+    WriteValue(stream, soc->ssu->PDRB.VALUE);
+    WriteValue(stream, soc->ssu->PMRB.VALUE);
+    WriteValue(stream, soc->ssu->PFCR.VALUE);
+    WriteValue(stream, soc->ssu->SSMR.VALUE);
+    WriteValue(stream, soc->ssu->SSER.VALUE);
+    WriteValue(stream, soc->ssu->SSSR.VALUE);
+    WriteValue(stream, soc->ssu->SSRDR);
+    WriteValue(stream, soc->ssu->SSTDR);
 
-    WriteValue(f, soc->timer_b1->TMB1.VALUE);
-    WriteValue(f, soc->timer_b1->TCB1);
-    WriteValue(f, soc->timer_b1->TLB1);
-    soc->timer_b1->SaveEmulatorState(f);
+    WriteValue(stream, soc->sci3->SMR.VALUE);
+    WriteValue(stream, soc->sci3->SSR.VALUE);
+    WriteValue(stream, soc->sci3->SCR.VALUE);
+    WriteValue(stream, soc->sci3->IRCR.VALUE);
+    WriteValue(stream, soc->sci3->BRR);
+    WriteValue(stream, soc->sci3->TDR);
+    WriteValue(stream, soc->sci3->RDR);
+    soc->sci3->SaveEmulatorState(stream);
 
-    WriteValue(f, soc->timer_w->TMRW.VALUE);
-    WriteValue(f, soc->timer_w->TCRW.VALUE);
-    soc->timer_w->SaveEmulatorState(f);
+    WriteValue(stream, soc->timer_b1->TMB1.VALUE);
+    WriteValue(stream, soc->timer_b1->TCB1);
+    WriteValue(stream, soc->timer_b1->TLB1);
+    soc->timer_b1->SaveEmulatorState(stream);
 
-    WriteValue(f, soc->rtc->RTCCR1.VALUE);
-    WriteValue(f, soc->rtc->RSECDR);
-    WriteValue(f, soc->rtc->RMINDR);
-    WriteValue(f, soc->rtc->RHRDR);
-    WriteValue(f, soc->rtc->RWKDR);
-    soc->rtc->SaveEmulatorState(f);
+    WriteValue(stream, soc->timer_w->TMRW.VALUE);
+    WriteValue(stream, soc->timer_w->TCRW.VALUE);
+    soc->timer_w->SaveEmulatorState(stream);
 
-    WriteValue(f, soc->adc->ADSR.VALUE);
-    WriteValue(f, soc->adc->AMR.VALUE);
+    WriteValue(stream, soc->rtc->RTCCR1.VALUE);
+    WriteValue(stream, soc->rtc->RSECDR);
+    WriteValue(stream, soc->rtc->RMINDR);
+    WriteValue(stream, soc->rtc->RHRDR);
+    WriteValue(stream, soc->rtc->RWKDR);
+    soc->rtc->SaveEmulatorState(stream);
 
-    WriteDisplayState(f, ssd1854);
-    ssd1854->SaveEmulatorState(f);
-    soc->ssu->SaveEmulatorState(f);
+    WriteValue(stream, soc->adc->ADSR.VALUE);
+    WriteValue(stream, soc->adc->AMR.VALUE);
+
+    WriteDisplayState(stream, ssd1854);
+    ssd1854->SaveEmulatorState(stream);
+    soc->ssu->SaveEmulatorState(stream);
 }
 
 void PocketWalker::CyclePeripherals(uint8_t cycles) const

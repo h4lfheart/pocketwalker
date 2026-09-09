@@ -325,10 +325,16 @@ void RTC::LoadState(const std::string& path)
 {
     const auto rtc_path = std::filesystem::path(path);
     const auto rtc_directory = rtc_path.parent_path();
+    std::ifstream f(path, std::ios::binary);
+    LoadState(f, rtc_directory);
+}
+
+void RTC::LoadState(std::istream& f, const std::filesystem::path& rtc_directory)
+{
     clock_directory = rtc_directory;
     debug_log_path = rtc_directory / "pocketwalker_rtc_debug.log";
     DebugLog("----- RTC LoadState begin -----");
-    DebugLog("rtc_path=" + rtc_path.string());
+    DebugLog("rtc_directory=" + rtc_directory.string());
     DebugLog("state_virtual_before_rtc=" + DescribeTime(virtual_time));
     DebugLog("state_last_processed_before_rtc=" + DescribeTime(last_processed_midnight));
 
@@ -367,7 +373,6 @@ void RTC::LoadState(const std::string& path)
         return;
     }
 
-    std::ifstream f(path, std::ios::binary);
     if (!f)
     {
         last_processed_midnight = LocalMidnightAtOrBefore(virtual_time);
@@ -797,6 +802,15 @@ void RTC::SaveState(const std::string& path)
         return;
     }
 
+    SaveState(f, rtc_directory);
+    DebugLog("SaveState path=" + rtc_path.string());
+}
+
+void RTC::SaveState(std::ostream& f, const std::filesystem::path& rtc_directory)
+{
+    if (debug_log_path.empty())
+        debug_log_path = rtc_directory / "pocketwalker_rtc_debug.log";
+
     const char magic[8] = {'P', 'W', 'R', 'T', 'C', '0', '0', '2'};
     const int64_t saved_virtual_time = static_cast<int64_t>(IsCatchUpActive() ? catch_up_target_time : virtual_time);
     const HostClockInfo clock = CurrentHostClock(rtc_directory);
@@ -809,8 +823,7 @@ void RTC::SaveState(const std::string& path)
     f.write(reinterpret_cast<const char*>(&saved_virtual_time), sizeof(saved_virtual_time));
     f.write(reinterpret_cast<const char*>(&saved_host_time), sizeof(saved_host_time));
     f.write(reinterpret_cast<const char*>(&saved_processed_midnight), sizeof(saved_processed_midnight));
-    DebugLog("SaveState path=" + rtc_path.string() +
-             " virtual=" + DescribeTime(static_cast<time_t>(saved_virtual_time)) +
+    DebugLog("SaveState virtual=" + DescribeTime(static_cast<time_t>(saved_virtual_time)) +
              " host=" + DescribeTime(static_cast<time_t>(saved_host_time)) +
              " processed_midnight=" + DescribeTime(static_cast<time_t>(saved_processed_midnight)) +
              " catch_up_active=" + (IsCatchUpActive() ? std::string("true") : std::string("false")) +

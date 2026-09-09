@@ -3,7 +3,10 @@
 #include <atomic>
 #include <chrono>
 #include <cstdint>
+#include <filesystem>
+#include <istream>
 #include <memory>
+#include <ostream>
 #include <string>
 
 #include "core/soc/h838606.h"
@@ -59,7 +62,9 @@ public:
     uint16_t GetVolatileWatts() const;
     void RestoreVolatileCounters(uint32_t steps, uint16_t watts) const;
     void LoadRtcState(const std::string& path) const;
+    void LoadRtcState(std::istream& stream, const std::filesystem::path& base_directory) const;
     void SaveRtcState(const std::string& path) const;
+    void SaveRtcState(std::ostream& stream, const std::filesystem::path& base_directory) const;
     bool IsRtcCatchUpActive() const;
     size_t RtcCatchUpMidnightsCompleted() const;
     size_t RtcCatchUpMidnightsTotal() const;
@@ -68,7 +73,9 @@ public:
     void ClearPendingRtcInterruptFlagsForCatchUp() const;
     void PrepareRtcCatchUp();
     bool LoadEmulatorState(const std::string& path) const;
+    bool LoadEmulatorState(std::istream& stream) const;
     void SaveEmulatorState(const std::string& path) const;
+    void SaveEmulatorState(std::ostream& stream) const;
 
 private:
     void CyclePeripherals(uint8_t cycles) const;

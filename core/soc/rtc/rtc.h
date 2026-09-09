@@ -39,7 +39,9 @@ public:
 
     void Cycle(uint8_t cycles);
     void LoadState(const std::string& path);
+    void LoadState(std::istream& stream, const std::filesystem::path& base_directory);
     void SaveState(const std::string& path);
+    void SaveState(std::ostream& stream, const std::filesystem::path& base_directory);
     bool LoadEmulatorState(std::istream& stream);
     void SaveEmulatorState(std::ostream& stream) const;
     bool IsCatchUpActive() const;

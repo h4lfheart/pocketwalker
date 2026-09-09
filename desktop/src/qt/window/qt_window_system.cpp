@@ -1,5 +1,6 @@
 #include "qt_window_system.h"
 #include <algorithm>
+#include <filesystem>
 #include <fstream>
 #include <QMenuBar>
 #include <QTimer>
@@ -29,6 +30,14 @@ namespace
 {
 constexpr bool SHUTDOWN_SETTLE_ENABLED = false;
 constexpr int SHUTDOWN_SETTLE_SECONDS = 15;
+
+std::filesystem::path PwsavPathForSavePath(const std::string& save_path)
+{
+    std::filesystem::path path(save_path);
+    if (path.extension() != ".pwsav")
+        path.replace_extension(".pwsav");
+    return path;
+}
 }
 
 QtWindowSystem::QtWindowSystem(ApplicationArguments args, QWidget* parent)
@@ -221,7 +230,7 @@ QtWindowSystem::QtWindowSystem(ApplicationArguments args, QWidget* parent)
         if (args.save_path)
         {
             const QFileInfo save_file(QString::fromStdString(*args.save_path));
-            if (!save_file.exists())
+            if (!save_file.exists() && !std::filesystem::exists(PwsavPathForSavePath(*args.save_path)))
             {
                 Log::Warn("Invalid save path: {}", *args.save_path);
                 return;
@@ -307,6 +316,8 @@ void QtWindowSystem::importSave()
     std::ifstream src(path.toStdString(), std::ios::binary);
     std::ofstream dst(save_path, std::ios::binary);
     dst << src.rdbuf();
+    std::error_code ignored;
+    std::filesystem::remove(PwsavPathForSavePath(save_path), ignored);
 
     launchEmulator(rom_path);
 }
