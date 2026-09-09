@@ -62,3 +62,14 @@ void TimerW::Cycle(uint8_t cycles)
         }
     }
 }
+
+void TimerW::SaveEmulatorState(std::ostream& stream) const
+{
+    stream.write(reinterpret_cast<const char*>(&timer_w_cycles), sizeof(timer_w_cycles));
+}
+
+bool TimerW::LoadEmulatorState(std::istream& stream)
+{
+    stream.read(reinterpret_cast<char*>(&timer_w_cycles), sizeof(timer_w_cycles));
+    return static_cast<bool>(stream);
+}

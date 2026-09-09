@@ -1,13 +1,19 @@
 #include "qt_window_system.h"
+#include <algorithm>
+#include <filesystem>
 #include <fstream>
 #include <QMenuBar>
 #include <QTimer>
 #include <QApplication>
 #include <QFileDialog>
 #include <QFileInfo>
+#include <QLabel>
 #include <QMessageBox>
+#include <QProgressBar>
+#include <QStackedWidget>
 #include <QStyleFactory>
 #include <QStyleHints>
+#include <QVBoxLayout>
 
 
 #include "../dialog/settings/control_settings_dialog.h"
@@ -20,10 +26,26 @@
 #include "desktop/src/qt/dialog/settings/audio_settings_dialog.h"
 #include "desktop/src/qt/settings/app_settings.h"
 
+namespace
+{
+constexpr bool SHUTDOWN_SETTLE_ENABLED = false;
+constexpr int SHUTDOWN_SETTLE_SECONDS = 15;
+
+std::filesystem::path PwsavPathForSavePath(const std::string& save_path)
+{
+    std::filesystem::path path(save_path);
+    if (path.extension() != ".pwsav")
+        path.replace_extension(".pwsav");
+    return path;
+}
+}
+
 QtWindowSystem::QtWindowSystem(ApplicationArguments args, QWidget* parent)
     : QMainWindow(parent), args(args)
 {
     setWindowTitle("PocketWalker");
+    if (!args.no_menu)
+    {
     menuBar()->setNativeMenuBar(true);
 #if WIN32
     if (QApplication::style()->name() == "windows11")
@@ -154,14 +176,44 @@ QtWindowSystem::QtWindowSystem(ApplicationArguments args, QWidget* parent)
         dlg->setAttribute(Qt::WA_DeleteOnClose);
         dlg->exec();
     });
+    }
 
+    central_stack = new QStackedWidget(this);
     display = new DisplayWidget(this);
-    setCentralWidget(display);
+
+    startup_catch_up_widget = new QWidget(this);
+    auto* startup_catch_up_layout = new QVBoxLayout(startup_catch_up_widget);
+    startup_catch_up_layout->setContentsMargins(24, 24, 24, 24);
+    startup_catch_up_layout->setSpacing(12);
+
+    startup_catch_up_label = new QLabel("Updating Pokéwalker! Please wait...", startup_catch_up_widget);
+    startup_catch_up_label->setAlignment(Qt::AlignCenter);
+    startup_catch_up_label->setStyleSheet("font-weight: 600;");
+    startup_catch_up_progress = new QProgressBar(startup_catch_up_widget);
+    startup_catch_up_progress->setTextVisible(false);
+
+    startup_catch_up_layout->addStretch();
+    startup_catch_up_layout->addWidget(startup_catch_up_label);
+    startup_catch_up_layout->addWidget(startup_catch_up_progress);
+    startup_catch_up_layout->addStretch();
+
+    central_stack->addWidget(display);
+    central_stack->addWidget(startup_catch_up_widget);
+    setCentralWidget(central_stack);
+    central_stack->setCurrentWidget(display);
     adjustSize();
 
     render_timer = new QTimer(this);
     connect(render_timer, &QTimer::timeout, display, QOverload<>::of(&QWidget::update));
     render_timer->start(16);
+
+    shutdown_settle_timer = new QTimer(this);
+    shutdown_settle_timer->setInterval(1000);
+    connect(shutdown_settle_timer, &QTimer::timeout, this, &QtWindowSystem::updateSettledShutdownCountdown);
+
+    startup_catch_up_timer = new QTimer(this);
+    startup_catch_up_timer->setInterval(50);
+    connect(startup_catch_up_timer, &QTimer::timeout, this, &QtWindowSystem::updateStartupCatchUp);
 
     applyTheme();
 
@@ -178,7 +230,7 @@ QtWindowSystem::QtWindowSystem(ApplicationArguments args, QWidget* parent)
         if (args.save_path)
         {
             const QFileInfo save_file(QString::fromStdString(*args.save_path));
-            if (!save_file.exists())
+            if (!save_file.exists() && !std::filesystem::exists(PwsavPathForSavePath(*args.save_path)))
             {
                 Log::Warn("Invalid save path: {}", *args.save_path);
                 return;
@@ -187,6 +239,14 @@ QtWindowSystem::QtWindowSystem(ApplicationArguments args, QWidget* parent)
         }
 
         launchEmulator(rom_file.absoluteFilePath().toStdString(), save_path);
+        if (args.test_auto_close_ms.has_value())
+        {
+            QTimer::singleShot(static_cast<int>(*args.test_auto_close_ms), this, [this]
+            {
+                shutdownEmulator();
+                qApp->quit();
+            });
+        }
     }
     else
     {
@@ -198,6 +258,10 @@ QtWindowSystem::QtWindowSystem(ApplicationArguments args, QWidget* parent)
 
 QtWindowSystem::~QtWindowSystem()
 {
+    if (shutdown_settle_timer)
+        shutdown_settle_timer->stop();
+    if (startup_catch_up_timer)
+        startup_catch_up_timer->stop();
     shutdownEmulator();
 }
 
@@ -252,6 +316,8 @@ void QtWindowSystem::importSave()
     std::ifstream src(path.toStdString(), std::ios::binary);
     std::ofstream dst(save_path, std::ios::binary);
     dst << src.rdbuf();
+    std::error_code ignored;
+    std::filesystem::remove(PwsavPathForSavePath(save_path), ignored);
 
     launchEmulator(rom_path);
 }
@@ -264,7 +330,8 @@ void QtWindowSystem::resetEmulator()
     const std::string path = context->romPath();
     launchEmulator(path);
 
-    context->emulator().UseSyntheticSteps(synthetic_steps_action->isChecked());
+    if (synthetic_steps_action)
+        context->emulator().UseSyntheticSteps(synthetic_steps_action->isChecked());
 }
 
 void QtWindowSystem::launchEmulator(const std::string& rom_path, const std::string& save_path)
@@ -285,6 +352,11 @@ void QtWindowSystem::launchEmulator(const std::string& rom_path, const std::stri
     setWindowTitle(QString("PocketWalker - %1").arg(QString::fromStdString(filename)));
 
     setBypassPowerSave();
+
+    if (context->emulator().IsRtcCatchUpActive())
+        beginStartupCatchUp();
+    else if (central_stack)
+        central_stack->setCurrentWidget(display);
 }
 
 void QtWindowSystem::shutdownEmulator()
@@ -292,8 +364,14 @@ void QtWindowSystem::shutdownEmulator()
     if (!context)
         return;
 
+    if (startup_catch_up_timer)
+        startup_catch_up_timer->stop();
+    startup_catch_up_active = false;
+
     render_timer->stop();
     display->setEmulator(nullptr);
+    if (central_stack)
+        central_stack->setCurrentWidget(display);
     display->update();
     context.reset();
     setEmulatorActionsEnabled(false);
@@ -302,13 +380,173 @@ void QtWindowSystem::shutdownEmulator()
 
 void QtWindowSystem::setEmulatorActionsEnabled(bool enabled)
 {
-    import_save_action->setEnabled(enabled);
-    reset_action->setEnabled(enabled);
-    pause_action->setEnabled(enabled);
-    stop_action->setEnabled(enabled);
-    synthetic_steps_action->setEnabled(enabled);
-    set_watts_action->setEnabled(enabled);
-    set_session_steps_action->setEnabled(enabled);
+    if (shutdown_settle_active || isStartupCatchUpActive())
+        enabled = false;
+
+    if (import_save_action) import_save_action->setEnabled(enabled);
+    if (reset_action) reset_action->setEnabled(enabled);
+    if (pause_action) pause_action->setEnabled(enabled);
+    if (stop_action) stop_action->setEnabled(enabled);
+    if (synthetic_steps_action) synthetic_steps_action->setEnabled(enabled);
+    if (set_watts_action) set_watts_action->setEnabled(enabled);
+    if (set_session_steps_action) set_session_steps_action->setEnabled(enabled);
+}
+
+void QtWindowSystem::releaseHeldInputs()
+{
+    if (!context)
+        return;
+
+    context->emulator().ReleaseButton(ButtonType::LEFT);
+    context->emulator().ReleaseButton(ButtonType::RIGHT);
+    context->emulator().ReleaseButton(ButtonType::CENTER);
+    context->emulator().UseFastMode(false);
+    context->emulator().UseSyntheticSteps(false);
+
+    if (synthetic_steps_action)
+        synthetic_steps_action->setChecked(false);
+}
+
+void QtWindowSystem::beginSettledShutdown()
+{
+    if (!context || shutdown_settle_active)
+        return;
+
+    shutdown_settle_active = true;
+    shutdown_settle_seconds_remaining = SHUTDOWN_SETTLE_SECONDS;
+
+    releaseHeldInputs();
+    context->emulator().UseFastMode(false);
+    context->emulator().SetPause(false);
+
+    if (pause_action)
+        pause_action->setChecked(false);
+
+    setEmulatorActionsEnabled(false);
+
+    shutdown_wait_dialog = new QMessageBox(this);
+    shutdown_wait_dialog->setAttribute(Qt::WA_DeleteOnClose);
+    shutdown_wait_dialog->setWindowTitle("PocketWalker is shutting down");
+    shutdown_wait_dialog->setIcon(QMessageBox::Information);
+    shutdown_wait_dialog->setModal(false);
+    shutdown_wait_dialog->addButton("Close Now", QMessageBox::AcceptRole);
+    shutdown_wait_dialog->setText(QString("Waiting for the game to idle so it can shut down!\n\nSeconds [%1]")
+        .arg(shutdown_settle_seconds_remaining));
+    connect(shutdown_wait_dialog, &QMessageBox::buttonClicked, this, [this]
+    {
+        if (shutdown_settle_active)
+            finishSettledShutdown();
+    });
+    shutdown_wait_dialog->show();
+
+    shutdown_settle_timer->start();
+    QTimer::singleShot(SHUTDOWN_SETTLE_SECONDS * 1000 + 250, this, [this]
+    {
+        if (shutdown_settle_active)
+            finishSettledShutdown();
+    });
+}
+
+void QtWindowSystem::updateSettledShutdownCountdown()
+{
+    if (!shutdown_settle_active)
+        return;
+
+    --shutdown_settle_seconds_remaining;
+
+    if (shutdown_settle_seconds_remaining <= 0)
+    {
+        finishSettledShutdown();
+        return;
+    }
+
+    if (shutdown_wait_dialog)
+    {
+        shutdown_wait_dialog->setText(QString("Waiting for the game to idle so it can shut down!\n\nSeconds [%1]")
+            .arg(shutdown_settle_seconds_remaining));
+    }
+}
+
+void QtWindowSystem::finishSettledShutdown()
+{
+    if (shutdown_settle_timer)
+        shutdown_settle_timer->stop();
+
+    if (shutdown_wait_dialog)
+    {
+        shutdown_wait_dialog->close();
+        shutdown_wait_dialog = nullptr;
+    }
+
+    shutdown_settle_active = false;
+    shutdownEmulator();
+    qApp->quit();
+}
+
+void QtWindowSystem::beginStartupCatchUp()
+{
+    if (!context || startup_catch_up_active)
+        return;
+
+    startup_catch_up_active = true;
+    setEmulatorActionsEnabled(false);
+
+    if (startup_catch_up_label)
+    {
+        QString text = "Updating Pokéwalker! Please wait...";
+        const std::string& last_active_date = context->rtcLastActiveDate();
+        if (!last_active_date.empty())
+        {
+            text += "\n\nLast active: ";
+            text += QString::fromStdString(last_active_date);
+        }
+        startup_catch_up_label->setText(text);
+    }
+
+    if (central_stack)
+        central_stack->setCurrentWidget(startup_catch_up_widget);
+
+    if (startup_catch_up_progress)
+    {
+        startup_catch_up_progress->setMinimum(0);
+        startup_catch_up_progress->setMaximum(static_cast<int>(std::max<size_t>(
+            context->emulator().RtcCatchUpMidnightsTotal(), 1)));
+        startup_catch_up_progress->setValue(0);
+    }
+
+    startup_catch_up_timer->start();
+    updateStartupCatchUp();
+}
+
+void QtWindowSystem::updateStartupCatchUp()
+{
+    if (!context || !startup_catch_up_active)
+        return;
+
+    const size_t total = context->emulator().RtcCatchUpMidnightsTotal();
+    const size_t completed = context->emulator().RtcCatchUpMidnightsCompleted();
+
+    if (startup_catch_up_progress)
+    {
+        startup_catch_up_progress->setMaximum(static_cast<int>(std::max<size_t>(total, 1)));
+        startup_catch_up_progress->setValue(static_cast<int>(std::min(completed, total)));
+    }
+
+    if (context->emulator().IsRtcCatchUpActive())
+        return;
+
+    startup_catch_up_timer->stop();
+    startup_catch_up_active = false;
+
+    if (central_stack)
+        central_stack->setCurrentWidget(display);
+
+    setEmulatorActionsEnabled(true);
+}
+
+bool QtWindowSystem::isStartupCatchUpActive() const
+{
+    return startup_catch_up_active;
 }
 
 void QtWindowSystem::addToRecentROMs(const std::string& path)
@@ -324,6 +562,9 @@ void QtWindowSystem::addToRecentROMs(const std::string& path)
 
 void QtWindowSystem::updateRecentROMsMenu()
 {
+    if (!recent_roms_menu)
+        return;
+
     recent_roms_menu->clear();
 
     const auto& recent = AppSettings::instance.general.recent_roms;
@@ -376,6 +617,12 @@ void QtWindowSystem::setBypassPowerSave()
 
 void QtWindowSystem::keyPressEvent(QKeyEvent* event)
 {
+    if (shutdown_settle_active || isStartupCatchUpActive())
+    {
+        event->ignore();
+        return;
+    }
+
     if (!context)
     {
         QMainWindow::keyPressEvent(event);
@@ -384,6 +631,18 @@ void QtWindowSystem::keyPressEvent(QKeyEvent* event)
 
     const auto& controls = AppSettings::instance.controls;
     const int key = event->key();
+    const bool is_control_key =
+        key == controls.key_left ||
+        key == controls.key_right ||
+        key == controls.key_center ||
+        key == controls.key_speedup ||
+        key == controls.key_synthetic_steps_hold;
+
+    if (event->isAutoRepeat() && is_control_key)
+    {
+        event->accept();
+        return;
+    }
 
     if (key == controls.key_left) context->emulator().PressButton(ButtonType::LEFT);
     else if (key == controls.key_right) context->emulator().PressButton(ButtonType::RIGHT);
@@ -392,13 +651,20 @@ void QtWindowSystem::keyPressEvent(QKeyEvent* event)
     else if (key == controls.key_synthetic_steps_hold)
     {
         context->emulator().UseSyntheticSteps(true);
-        synthetic_steps_action->setChecked(true);
+        if (synthetic_steps_action)
+            synthetic_steps_action->setChecked(true);
     }
     else QMainWindow::keyPressEvent(event);
 }
 
 void QtWindowSystem::keyReleaseEvent(QKeyEvent* event)
 {
+    if (shutdown_settle_active || isStartupCatchUpActive())
+    {
+        event->ignore();
+        return;
+    }
+
     if (!context)
     {
         QMainWindow::keyReleaseEvent(event);
@@ -407,6 +673,18 @@ void QtWindowSystem::keyReleaseEvent(QKeyEvent* event)
 
     const auto& controls = AppSettings::instance.controls;
     const int key = event->key();
+    const bool is_control_key =
+        key == controls.key_left ||
+        key == controls.key_right ||
+        key == controls.key_center ||
+        key == controls.key_speedup ||
+        key == controls.key_synthetic_steps_hold;
+
+    if (event->isAutoRepeat() && is_control_key)
+    {
+        event->accept();
+        return;
+    }
 
     if (key == controls.key_left) context->emulator().ReleaseButton(ButtonType::LEFT);
     else if (key == controls.key_right) context->emulator().ReleaseButton(ButtonType::RIGHT);
@@ -415,13 +693,30 @@ void QtWindowSystem::keyReleaseEvent(QKeyEvent* event)
     else if (key == controls.key_synthetic_steps_hold)
     {
         context->emulator().UseSyntheticSteps(false);
-        synthetic_steps_action->setChecked(false);
+        if (synthetic_steps_action)
+            synthetic_steps_action->setChecked(false);
     }
     else QMainWindow::keyReleaseEvent(event);
 }
 
+void QtWindowSystem::changeEvent(QEvent* event)
+{
+    if (event->type() == QEvent::ActivationChange && !isActiveWindow())
+        releaseHeldInputs();
+
+    QMainWindow::changeEvent(event);
+}
+
 void QtWindowSystem::closeEvent(QCloseEvent* event)
 {
+    if (SHUTDOWN_SETTLE_ENABLED && context && !shutdown_settle_active)
+    {
+        beginSettledShutdown();
+        event->ignore();
+        return;
+    }
+
+    releaseHeldInputs();
     shutdownEmulator();
     event->accept();
 }

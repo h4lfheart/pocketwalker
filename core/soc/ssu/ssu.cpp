@@ -123,6 +123,15 @@ void SSU::RegisterOutputPin(
         else
             port &= ~(1 << pin_index);
         mem->Write8(port_addr, port);
+
+        if (port_addr == SSU_ADDR_PDRB && event.value)
+        {
+            if (pin_index == 0 && PFCR.IRQ0S == 0b00)
+                interrupts->IRR1.IRRI0 = true;
+
+            if (pin_index == 1 && PFCR.IRQ1S == 0b00)
+                interrupts->IRR1.IRRI1 = true;
+        }
     };
 }
 
@@ -190,4 +199,15 @@ std::shared_ptr<Peripheral> SSU::ActivePeripheral()
     }
 
     return nullptr;
+}
+
+void SSU::SaveEmulatorState(std::ostream& stream) const
+{
+    stream.write(reinterpret_cast<const char*>(&ssu_cycles), sizeof(ssu_cycles));
+}
+
+bool SSU::LoadEmulatorState(std::istream& stream)
+{
+    stream.read(reinterpret_cast<char*>(&ssu_cycles), sizeof(ssu_cycles));
+    return static_cast<bool>(stream);
 }

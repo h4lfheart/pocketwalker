@@ -1,5 +1,7 @@
 #pragma once
+#include <istream>
 #include <memory>
+#include <ostream>
 
 #include "core/memory/memory.h"
 #include "core/soc/ssu/peripheral.h"
@@ -35,6 +37,8 @@ public:
     uint8_t Transmit() override;
     void Reset() override;
     void Cycle(uint32_t cycles) override;
+    void SaveEmulatorState(std::ostream& stream);
+    bool LoadEmulatorState(std::istream& stream);
 
     void SetSampleProvider(const std::shared_ptr<SampleProvider>& provider)
     {
