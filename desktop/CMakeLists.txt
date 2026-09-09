@@ -58,4 +58,7 @@ target_link_libraries(pocketwalker PRIVATE
 
 if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
     target_link_libraries(pocketwalker PRIVATE stdc++exp)
+    if(WIN32)
+        target_link_options(pocketwalker PRIVATE -static -static-libgcc -static-libstdc++)
+    endif()
 endif()

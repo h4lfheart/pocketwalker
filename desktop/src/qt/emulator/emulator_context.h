@@ -25,6 +25,7 @@ public:
     PocketWalker& emulator() { return *emu; }
     const std::string& savePath() const { return save_path; }
     const std::string& romPath() const { return rom_path; }
+    const std::string& rtcLastActiveDate() const { return rtc_last_active_date; }
 
 private:
     void loadSave();
@@ -32,6 +33,7 @@ private:
 
     std::string rom_path;
     std::string save_path;
+    std::string rtc_last_active_date;
     std::optional<PocketWalker> emu;
     std::unique_ptr<QtAudioSystem> audio;
     std::unique_ptr<QtNetworkSystem> network;

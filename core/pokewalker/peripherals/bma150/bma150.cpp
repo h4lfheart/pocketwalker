@@ -63,3 +63,47 @@ void BMA150::Cycle(uint32_t cycles)
     OnOutputPin({BMA150_PIN_INT, true});
     OnOutputPin({BMA150_PIN_INT, false});
 }
+
+void BMA150::SaveEmulatorState(std::ostream& stream)
+{
+    for (uint16_t i = 0; i < 0x80; i++)
+    {
+        const uint8_t value = mem.Read8(i);
+        stream.write(reinterpret_cast<const char*>(&value), sizeof(value));
+    }
+
+    const uint8_t state_value = static_cast<uint8_t>(state);
+    stream.write(reinterpret_cast<const char*>(&state_value), sizeof(state_value));
+    stream.write(reinterpret_cast<const char*>(&is_reading), sizeof(is_reading));
+    stream.write(reinterpret_cast<const char*>(&register_index), sizeof(register_index));
+    stream.write(reinterpret_cast<const char*>(&cycle_count), sizeof(cycle_count));
+    stream.write(reinterpret_cast<const char*>(&offset), sizeof(offset));
+}
+
+bool BMA150::LoadEmulatorState(std::istream& stream)
+{
+    for (uint16_t i = 0; i < 0x80; i++)
+    {
+        uint8_t value = 0;
+        stream.read(reinterpret_cast<char*>(&value), sizeof(value));
+        if (!stream)
+            return false;
+        mem.Write8(i, value);
+    }
+
+    uint8_t state_value = 0;
+    stream.read(reinterpret_cast<char*>(&state_value), sizeof(state_value));
+    stream.read(reinterpret_cast<char*>(&is_reading), sizeof(is_reading));
+    stream.read(reinterpret_cast<char*>(&register_index), sizeof(register_index));
+    stream.read(reinterpret_cast<char*>(&cycle_count), sizeof(cycle_count));
+    stream.read(reinterpret_cast<char*>(&offset), sizeof(offset));
+    if (!stream)
+        return false;
+
+    if (state_value > static_cast<uint8_t>(BMA150State::MEMORY))
+        state_value = static_cast<uint8_t>(BMA150State::IDLE);
+
+    state = static_cast<BMA150State>(state_value);
+    register_index &= 0x7F;
+    return true;
+}

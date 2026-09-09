@@ -122,3 +122,45 @@ void SCI3::ReceiveIR(uint8_t data)
     std::lock_guard lock(receive_mutex);
     receive_queue.push(data);
 }
+
+void SCI3::SaveEmulatorState(std::ostream& stream)
+{
+    std::lock_guard lock(receive_mutex);
+    stream.write(reinterpret_cast<const char*>(&sci3_cycles), sizeof(sci3_cycles));
+
+    uint32_t queue_size = static_cast<uint32_t>(receive_queue.size());
+    stream.write(reinterpret_cast<const char*>(&queue_size), sizeof(queue_size));
+
+    auto queue_copy = receive_queue;
+    while (!queue_copy.empty())
+    {
+        const uint8_t value = queue_copy.front();
+        queue_copy.pop();
+        stream.write(reinterpret_cast<const char*>(&value), sizeof(value));
+    }
+}
+
+bool SCI3::LoadEmulatorState(std::istream& stream)
+{
+    std::lock_guard lock(receive_mutex);
+    stream.read(reinterpret_cast<char*>(&sci3_cycles), sizeof(sci3_cycles));
+    if (!stream)
+        return false;
+
+    uint32_t queue_size = 0;
+    stream.read(reinterpret_cast<char*>(&queue_size), sizeof(queue_size));
+    if (!stream)
+        return false;
+
+    receive_queue = {};
+    for (uint32_t i = 0; i < queue_size; i++)
+    {
+        uint8_t value = 0;
+        stream.read(reinterpret_cast<char*>(&value), sizeof(value));
+        if (!stream)
+            return false;
+        receive_queue.push(value);
+    }
+
+    return true;
+}

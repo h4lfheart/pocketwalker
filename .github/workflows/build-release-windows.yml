@@ -63,7 +63,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           name: "pocketwalker ${{ github.ref_name }}"
-          files: desktop/build/release-mingw/release/pocketwalker.exe
+          files: desktop/build/release/release/pocketwalker.exe
           draft: false
           prerelease: false
           generate_release_notes: true

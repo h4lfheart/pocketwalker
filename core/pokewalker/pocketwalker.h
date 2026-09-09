@@ -1,8 +1,10 @@
 #pragma once
 #include <array>
 #include <atomic>
+#include <chrono>
 #include <cstdint>
 #include <memory>
+#include <string>
 
 #include "core/soc/h838606.h"
 #include "core/utils/event_handler.h"
@@ -16,6 +18,7 @@
 #define PW_ADDR_WATTS 0xF78E
 #define PW_ADDR_SESSION_STEPS 0xF79C
 #define PW_ADDR_TOTAL_STEPS 0xF780
+#define PW_ADDR_TOTAL_DAYS 0xF78C
 #define PW_ADDR_ACTIVITY_TIMER 0xF7AF
 
 enum class ButtonType
@@ -52,10 +55,28 @@ public:
 
     EepromBuffer GetEepromBuffer() const;
     void SetEepromBuffer(const EepromBuffer& buffer) const;
+    uint32_t GetVolatileStepCount() const;
+    uint16_t GetVolatileWatts() const;
+    void RestoreVolatileCounters(uint32_t steps, uint16_t watts) const;
+    void LoadRtcState(const std::string& path) const;
+    void SaveRtcState(const std::string& path) const;
+    bool IsRtcCatchUpActive() const;
+    size_t RtcCatchUpMidnightsCompleted() const;
+    size_t RtcCatchUpMidnightsTotal() const;
+    void ApplyRtcCatchUpOverflowDays() const;
+    void ApplyPendingRtcSyncClock() const;
+    void ClearPendingRtcInterruptFlagsForCatchUp() const;
+    void PrepareRtcCatchUp();
+    bool LoadEmulatorState(const std::string& path) const;
+    void SaveEmulatorState(const std::string& path) const;
 
 private:
     void CyclePeripherals(uint8_t cycles) const;
     void CycleEnhancements(uint8_t cycles) const;
+    uint64_t RtcCatchUpStateHash() const;
+    void UpdateRtcCatchUpFirmwareSettle();
+    void UpdateDailyPeerCooldownNormalization();
+    void NormalizeClearedPeerCooldownSlots() const;
 
     std::shared_ptr<H838606> soc = nullptr;
 
@@ -74,4 +95,21 @@ private:
     std::atomic<bool> is_paused = false;
     std::atomic<bool> is_fast_mode = false;
     std::atomic<bool> bypass_power_save = false;
+    std::atomic<bool> rtc_catch_up_waiting_for_steps = false;
+    uint32_t rtc_catch_up_last_total_steps = 0;
+    uint32_t rtc_catch_up_last_session_steps = 0;
+    std::chrono::steady_clock::time_point rtc_catch_up_steps_stable_since = {};
+    bool rtc_catch_up_was_active = false;
+    bool rtc_catch_up_settle_tracking = false;
+    uint64_t rtc_catch_up_settle_hash = 0;
+    std::chrono::steady_clock::time_point rtc_catch_up_settle_started_at = {};
+    std::chrono::steady_clock::time_point rtc_catch_up_settle_since = {};
+    std::chrono::steady_clock::time_point rtc_catch_up_next_settle_check = {};
+    bool peer_cooldown_normalize_pending = false;
+    uint16_t last_observed_total_days = 0;
+    uint32_t last_logged_total_steps = 0;
+    uint32_t last_logged_session_steps = 0;
+    bool last_logged_synthetic_steps = false;
+    bool last_logged_synthetic_sleep_probe = false;
+    std::chrono::steady_clock::time_point peer_cooldown_normalize_at = {};
 };

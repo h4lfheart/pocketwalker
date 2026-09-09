@@ -1,4 +1,7 @@
 #pragma once
+#include <istream>
+#include <ostream>
+
 #include "core/memory/memory.h"
 #include "core/soc/ssu/peripheral.h"
 
@@ -50,6 +53,8 @@ public:
 
     void Receive(uint8_t data) override;
     uint8_t Transmit() override;
+    void SaveEmulatorState(std::ostream& stream) const;
+    bool LoadEmulatorState(std::istream& stream);
 
     SSD1854DrawInfo draw_info = {};
 

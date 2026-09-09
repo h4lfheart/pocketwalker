@@ -30,12 +30,20 @@ int main(int argc, char* argv[])
              .help("Runs in server mode.")
              .flag();
 
+    arguments.add_argument("--no-menu")
+             .help("Hides the main window menu bar.")
+             .flag();
+
     arguments.add_argument("--ip")
              .help("IP address to connect to (client mode).");
 
     arguments.add_argument("--port")
              .help("TCP port for server or client.")
              .scan<'i', uint16_t>();
+
+    arguments.add_argument("--test-auto-close-ms")
+             .help("Internal RTC test helper: closes the emulator after the requested milliseconds.")
+             .scan<'i', uint32_t>();
 
     try
     {
@@ -54,6 +62,8 @@ int main(int argc, char* argv[])
     args.rom_path = arguments.present<std::string>("rom");
     args.save_path = arguments.present<std::string>("save");
     args.server_mode = arguments.get<bool>("--server");
+    args.no_menu = arguments.get<bool>("--no-menu");
+    args.test_auto_close_ms = arguments.present<uint32_t>("--test-auto-close-ms");
     args.host = arguments.present<std::string>("--ip");
     args.port = arguments.present<uint16_t>("--port");
 
