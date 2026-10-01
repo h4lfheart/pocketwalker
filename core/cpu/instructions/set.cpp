@@ -419,7 +419,9 @@ InstructionSet::InstructionSet() :
                             const uint16_t* rs = cpu.reg.Reg16(cpu.dH());
                             uint32_t* erd = cpu.reg.Reg32(cpu.dL());
 
-                            const int32_t result = static_cast<int32_t>(*erd) * static_cast<int16_t>(*rs);
+                            const auto destination_word = static_cast<int16_t>(static_cast<uint16_t>(*erd));
+                            const int32_t result = static_cast<int32_t>(destination_word) *
+                                                   static_cast<int16_t>(*rs);
                             *erd = result;
 
                             cpu.reg.flags.Z = result == 0;
