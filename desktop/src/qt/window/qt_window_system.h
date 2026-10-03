@@ -37,6 +37,7 @@ private:
     void setEmulatorActionsEnabled(bool enabled);
     void applyTheme();
     void setBypassPowerSave();
+    void setStepPeriod();
 
     ApplicationArguments args;
 

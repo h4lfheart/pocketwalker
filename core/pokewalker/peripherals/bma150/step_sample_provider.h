@@ -1,34 +1,51 @@
 #pragma once
 #include <array>
 #include <cstdint>
-#include <memory>
+
 #include "sample_provider.h"
-#include "core/memory/interface.h"
 
-#define PW_ADDR_ACCEL_SAMPLE_COUNT 0xF7AE
-#define PW_ADDR_IS_NOT_WALKING  0xF8EF
+#define STEP_SAMPLE_LUT_SIZE 64
+#define STEP_SAMPLE_DEFAULT_PERIOD 8
 
-static constexpr std::array<int8_t, 8> STEP_SINE_LUT = {
-    0, 18, 26, 18, 0, -18, -26, -18
+#define STEP_SAMPLE_MIN_PERIOD 6
+#define STEP_SAMPLE_MAX_PERIOD 13
+
+static constexpr std::array<int8_t, STEP_SAMPLE_LUT_SIZE> STEP_SINE_LUT = {
+    0, 12, 25, 37, 49, 60, 71, 81,
+    90, 98, 106, 112, 117, 122, 125, 126,
+    127, 126, 125, 122, 117, 112, 106, 98,
+    90, 81, 71, 60, 49, 37, 25, 12,
+    0, -12, -25, -37, -49, -60, -71, -81,
+    -90, -98, -106, -112, -117, -122, -125, -126,
+    -127, -126, -125, -122, -117, -112, -106, -98,
+    -90, -81, -71, -60, -49, -37, -25, -12
 };
 
 class StepSampleProvider : public SampleProvider
 {
 public:
-    explicit StepSampleProvider(const std::shared_ptr<MemoryInterface>& memory)
-        : mem(memory) {}
-
     AccelSample GetSample() override
     {
-        const uint8_t sample_count = mem->Read8(PW_ADDR_ACCEL_SAMPLE_COUNT);
+        const auto index = static_cast<uint16_t>((phase >> 8) & (STEP_SAMPLE_LUT_SIZE - 1));
+        phase += phase_step;
 
-        if (sample_count == 0)
-            mem->Write8(PW_ADDR_IS_NOT_WALKING, 0);
+        if (!IsEnabled())
+            return {0, 0, 0};
 
-        const int8_t s = STEP_SINE_LUT[sample_count & 7];
-        return {s, static_cast<int8_t>(s >> 1), 0};
+        const auto x = static_cast<int16_t>((STEP_SINE_LUT[index] * amplitude) >> 7);
+        return {x, static_cast<int16_t>(x / 2), 0};
+    }
+
+    void SetPeriod(uint8_t value)
+    {
+        period = value < STEP_SAMPLE_MIN_PERIOD ? STEP_SAMPLE_MIN_PERIOD : (value > STEP_SAMPLE_MAX_PERIOD ? STEP_SAMPLE_MAX_PERIOD : value);
+        phase_step = (STEP_SAMPLE_LUT_SIZE << 8) / period;
     }
 
 private:
-    std::shared_ptr<MemoryInterface> mem;
+    int16_t amplitude = 104;
+    uint8_t period = STEP_SAMPLE_DEFAULT_PERIOD;
+
+    uint16_t phase = 0;
+    uint16_t phase_step = (STEP_SAMPLE_LUT_SIZE << 8) / STEP_SAMPLE_DEFAULT_PERIOD;
 };

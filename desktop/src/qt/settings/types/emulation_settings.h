@@ -3,6 +3,8 @@
 #include <cstdint>
 #include <nlohmann/json.hpp>
 
+#include "core/pokewalker/peripherals/bma150/step_sample_provider.h"
+
 struct EmulationSettings
 {
     struct Color
@@ -20,6 +22,8 @@ struct EmulationSettings
     };
 
     bool bypass_power_save = false;
+
+    uint8_t step_period = STEP_SAMPLE_DEFAULT_PERIOD;
 };
 
 inline void to_json(nlohmann::json& j, const EmulationSettings::Color& c)
@@ -38,7 +42,8 @@ inline void to_json(nlohmann::json& j, const EmulationSettings& s)
 {
     j = nlohmann::json{
         {"palette", s.palette},
-        {"bypass_power_save", s.bypass_power_save}
+        {"bypass_power_save", s.bypass_power_save},
+        {"step_period", s.step_period}
     };
 }
 
@@ -48,4 +53,5 @@ inline void from_json(const nlohmann::json& j, EmulationSettings& s)
         s.palette = j["palette"].get<std::array<EmulationSettings::Color, 4>>();
 
     s.bypass_power_save = j.value("bypass_power_save", false);
+    s.step_period = j.value("step_period", STEP_SAMPLE_DEFAULT_PERIOD);
 }

@@ -119,6 +119,7 @@ QtWindowSystem::QtWindowSystem(ApplicationArguments args, QWidget* parent)
     {
         auto* dlg = new EmulationSettingsDialog(this);
         connect(dlg, &EmulationSettingsDialog::bypassPowerSaveChanged, this, &QtWindowSystem::setBypassPowerSave);
+        connect(dlg, &EmulationSettingsDialog::stepPeriodChanged, this, &QtWindowSystem::setStepPeriod);
         dlg->setAttribute(Qt::WA_DeleteOnClose);
         dlg->exec();
     });
@@ -285,6 +286,13 @@ void QtWindowSystem::launchEmulator(const std::string& rom_path, const std::stri
     setWindowTitle(QString("PocketWalker - %1").arg(QString::fromStdString(filename)));
 
     setBypassPowerSave();
+    setStepPeriod();
+}
+
+void QtWindowSystem::setStepPeriod()
+{
+    if (context)
+        context->emulator().SetStepPeriod(AppSettings::instance.emulation.step_period);
 }
 
 void QtWindowSystem::shutdownEmulator()

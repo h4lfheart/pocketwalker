@@ -4,7 +4,9 @@
 BMA150::BMA150()
 {
     control1 = mem.Ptr8(BMA150_ADDR_CONTROL_1);
-    *control1 = 1;
+    *control1 = BMA150_CONTROL_SLEEP;
+
+    mem.Write8(BMA150_ADDR_CHIP_ID, BMA150_CHIP_ID);
 }
 
 void BMA150::Receive(uint8_t data)
@@ -29,26 +31,39 @@ uint8_t BMA150::Transmit()
     if (!is_reading)
         return 0xFF;
 
-    if (register_index == BMA150_ADDR_ACC_X_LSB && offset == 0 && sample_provider && sample_provider->is_enabled)
+    if (register_index == BMA150_ADDR_ACC_X_LSB && offset == 0 && sample_provider && sample_provider->IsEnabled())
     {
         auto [x, y, z] = sample_provider->GetSample();
-        mem.Write8(BMA150_ADDR_ACC_X_MSB, static_cast<uint8_t>(x));
-        mem.Write8(BMA150_ADDR_ACC_Y_MSB, static_cast<uint8_t>(y));
-        mem.Write8(BMA150_ADDR_ACC_Z_MSB, static_cast<uint8_t>(z));
+        SetAxisRegisters(x, y, z);
     }
 
     return mem.Read8(register_index + offset++);
 }
 
+void BMA150::SetAxisRegisters(int16_t x, int16_t y, int16_t z)
+{
+    const auto write = [this](uint8_t lsb_address, uint8_t msb_address, int16_t value)
+    {
+        mem.Write8(msb_address, static_cast<uint8_t>(value >> 2));
+        mem.Write8(lsb_address, static_cast<uint8_t>(((value & 0x3) << 6) | BMA150_ACC_NEW_DATA));
+    };
+
+    write(BMA150_ADDR_ACC_X_LSB, BMA150_ADDR_ACC_X_MSB, x);
+    write(BMA150_ADDR_ACC_Y_LSB, BMA150_ADDR_ACC_Y_MSB, y);
+    write(BMA150_ADDR_ACC_Z_LSB, BMA150_ADDR_ACC_Z_MSB, z);
+}
+
 void BMA150::Reset()
 {
     state = BMA150State::IDLE;
+    is_reading = false;
+    register_index = 0;
     offset = 0;
 }
 
 void BMA150::Cycle(uint32_t cycles)
 {
-    if (*control1 & 1) // sleep
+    if (*control1 & BMA150_CONTROL_SLEEP)
         return;
 
     const uint16_t clock_rate = BMA150_CLOCK_RATES[

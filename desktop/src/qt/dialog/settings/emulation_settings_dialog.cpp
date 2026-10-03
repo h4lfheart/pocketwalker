@@ -33,6 +33,26 @@ EmulationSettingsDialog::EmulationSettingsDialog(QWidget* parent)
 
     enhancements_group->setLayout(enhancements_form);
 
+    step_rate = new QSlider(Qt::Horizontal, this);
+    step_rate->setRange(0, STEP_SAMPLE_MAX_PERIOD - STEP_SAMPLE_MIN_PERIOD);
+    step_rate->setValue(STEP_SAMPLE_MAX_PERIOD - emulation.step_period);
+
+    auto* slow_label = new QLabel("Slow", this);
+    auto* fast_label = new QLabel("Fast", this);
+    slow_label->setStyleSheet("color: gray;");
+    fast_label->setStyleSheet("color: gray;");
+
+    auto* step_rate_row = new QHBoxLayout();
+    step_rate_row->addWidget(slow_label);
+    step_rate_row->addWidget(step_rate);
+    step_rate_row->addWidget(fast_label);
+
+    auto* step_form = new QFormLayout();
+    step_form->addRow("Pace", step_rate_row);
+
+    auto* step_group = new QGroupBox("Synthetic Steps", this);
+    step_group->setLayout(step_form);
+
     pending_palette = AppSettings::instance.emulation.palette;
 
     auto* palette_form = new QFormLayout();
@@ -61,6 +81,7 @@ EmulationSettingsDialog::EmulationSettingsDialog(QWidget* parent)
 
     auto* layout = new QVBoxLayout(this);
     layout->addWidget(enhancements_group);
+    layout->addWidget(step_group);
     layout->addWidget(palette_group);
     layout->addWidget(buttons);
 
@@ -101,6 +122,12 @@ void EmulationSettingsDialog::updateSwatch(int index)
     swatches[index]->setText(color.name().toUpper());
 }
 
+void EmulationSettingsDialog::readStepControls()
+{
+    AppSettings::instance.emulation.step_period =
+        static_cast<uint8_t>(STEP_SAMPLE_MAX_PERIOD - step_rate->value());
+}
+
 void EmulationSettingsDialog::reset()
 {
     pending_palette = {
@@ -121,8 +148,10 @@ void EmulationSettingsDialog::apply()
     auto& emulation = AppSettings::instance.emulation;
     emulation.palette = pending_palette;
     emulation.bypass_power_save = bypass_power_save_check->isChecked();
+    readStepControls();
 
     emit paletteChanged();
     emit bypassPowerSaveChanged();
+    emit stepPeriodChanged();
     accept();
 }

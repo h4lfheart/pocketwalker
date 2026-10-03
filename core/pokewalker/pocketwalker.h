@@ -34,6 +34,7 @@ public:
     void Stop();
 
     void UseSyntheticSteps(bool value);
+    void SetStepPeriod(uint8_t period);
     void UseFastMode(bool value);
     void SetBypassPowerSave(bool value);
     void SetWatts(uint16_t value);

@@ -14,7 +14,7 @@ PocketWalker::PocketWalker(RomBuffer rom_buffer)
     this->soc->ssu->RegisterPeripheral(this->bma150, SSU_ADDR_PDR9, 0);
     this->soc->ssu->RegisterOutputPin(this->bma150, BMA150_PIN_INT, SSU_ADDR_PDRB, 1);
 
-    this->step_provider = std::make_shared<StepSampleProvider>(this->soc->memory);
+    this->step_provider = std::make_shared<StepSampleProvider>();
     this->bma150->SetSampleProvider(this->step_provider);
 
     this->m95512 = std::make_shared<M95512>();
@@ -87,7 +87,12 @@ void PocketWalker::SetSessionSteps(uint32_t value)
 
 void PocketWalker::UseSyntheticSteps(bool value)
 {
-    this->step_provider->is_enabled = value;
+    this->step_provider->SetEnabled(value);
+}
+
+void PocketWalker::SetStepPeriod(uint8_t period)
+{
+    this->step_provider->SetPeriod(period);
 }
 
 void PocketWalker::UseFastMode(bool value)
