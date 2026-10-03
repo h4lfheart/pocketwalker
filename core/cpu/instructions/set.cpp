@@ -1210,6 +1210,19 @@ InstructionSet::InstructionSet() :
         }
     });
 
+    root.Add(0x5, 0xC, {
+        "BSR d:16",
+        4,
+        {2, 0, 1, 0, 0, 0},
+        [](CPU& cpu)
+        {
+            cpu.Push16(cpu.reg.PC + 4);
+
+            const auto disp = static_cast<int16_t>(cpu.cd());
+            cpu.reg.PC += disp;
+        }
+    });
+
     root.AddSubtable(0x5, 0x8,
         [](const CPU& cpu) { return static_cast<uint32_t>(cpu.a()); },
         [](const CPU& cpu) { return static_cast<uint32_t>(cpu.bH()); },
