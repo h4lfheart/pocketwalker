@@ -46,7 +46,7 @@ public:
     void OnTransmitIR(const EventHandlerCallback<uint8_t>& callback);
     void ReceiveIR(uint8_t data);
 
-    SSD1854DrawInfo* GetDrawInfo();
+    SSD1854DrawInfo GetDrawInfo() const;
 
     void PressButton(ButtonType button) const;
     void ReleaseButton(ButtonType button) const;

@@ -1,4 +1,6 @@
 #pragma once
+#include <mutex>
+
 #include "core/memory/memory.h"
 #include "core/soc/ssu/peripheral.h"
 
@@ -51,7 +53,7 @@ public:
     void Receive(uint8_t data) override;
     uint8_t Transmit() override;
 
-    SSD1854DrawInfo draw_info = {};
+    SSD1854DrawInfo GetDrawInfo() const;
 
 private:
     void HandleCommand(uint8_t data);
@@ -63,4 +65,7 @@ private:
     uint8_t page = 0;
 
     bool is_data_mode = false;
+
+    SSD1854DrawInfo draw_info = {};
+    mutable std::mutex draw_info_mutex;
 };

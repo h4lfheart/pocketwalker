@@ -1,6 +1,6 @@
 #include "ssd1854.h"
 
-#include <print>
+#include <algorithm>
 
 #include "core/utils/logger.h"
 
@@ -15,6 +15,8 @@ SSD1854::SSD1854()
 
 void SSD1854::Receive(uint8_t data)
 {
+    std::lock_guard lock(draw_info_mutex);
+
     if (is_data_mode)
     {
         if (column >= SSD1854_TOTAL_COLUMNS)
@@ -52,6 +54,12 @@ void SSD1854::Receive(uint8_t data)
 uint8_t SSD1854::Transmit()
 {
     return 0xFF;
+}
+
+SSD1854DrawInfo SSD1854::GetDrawInfo() const
+{
+    std::lock_guard lock(draw_info_mutex);
+    return draw_info;
 }
 
 void SSD1854::HandleCommand(uint8_t data)

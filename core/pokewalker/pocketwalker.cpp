@@ -125,9 +125,9 @@ void PocketWalker::ReceiveIR(const uint8_t data)
     this->soc->sci3->ReceiveIR(data);
 }
 
-SSD1854DrawInfo* PocketWalker::GetDrawInfo()
+SSD1854DrawInfo PocketWalker::GetDrawInfo() const
 {
-    return &this->ssd1854->draw_info;
+    return this->ssd1854->GetDrawInfo();
 }
 
 void PocketWalker::PressButton(ButtonType button) const
