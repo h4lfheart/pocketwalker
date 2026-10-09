@@ -20,9 +20,9 @@ PocketWalker::PocketWalker(RomBuffer rom_buffer)
     this->m95512 = std::make_shared<M95512>();
     this->soc->ssu->RegisterPeripheral(this->m95512, SSU_ADDR_PDR1, 2);
 
-    this->ssd1854 = std::make_shared<SSD1854>();
-    this->soc->ssu->RegisterPeripheral(this->ssd1854, SSU_ADDR_PDR1, 0);
-    this->soc->ssu->RegisterInputPin(this->ssd1854, SSU_ADDR_PDR1, 1, SSD1854_PIN_DC);
+    this->nt7508 = std::make_shared<NT7508>();
+    this->soc->ssu->RegisterPeripheral(this->nt7508, SSU_ADDR_PDR1, 0);
+    this->soc->ssu->RegisterInputPin(this->nt7508, SSU_ADDR_PDR1, 1, NT7508_PIN_DC);
 
     this->buzzer = std::make_shared<Buzzer>(this->soc->timer_w);
 
@@ -125,9 +125,9 @@ void PocketWalker::ReceiveIR(const uint8_t data)
     this->soc->sci3->ReceiveIR(data);
 }
 
-SSD1854DrawInfo PocketWalker::GetDrawInfo() const
+NT7508DrawInfo PocketWalker::GetDrawInfo() const
 {
-    return this->ssd1854->GetDrawInfo();
+    return this->nt7508->GetDrawInfo();
 }
 
 void PocketWalker::PressButton(ButtonType button) const

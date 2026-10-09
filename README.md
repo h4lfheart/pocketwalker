@@ -29,7 +29,7 @@
 ### PokéWalker
 - Accelerometer (BMA150)
 - EEPRom (M95512)
-- LCD (SSD1854)
+- LCD (NT7508)
 - Buzzer
 - IR Communications over TCP with [melonDS-IR](https://github.com/DaveuRrr/melonDS-IR)
 

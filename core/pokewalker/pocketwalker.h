@@ -11,7 +11,7 @@
 #include "peripherals/bma150/step_sample_provider.h"
 #include "peripherals/buzzer/buzzer.h"
 #include "peripherals/m95512/m95512.h"
-#include "peripherals/ssd1854/ssd1854.h"
+#include "peripherals/nt7508/nt7508.h"
 
 #define PW_ADDR_WATTS 0xF78E
 #define PW_ADDR_SESSION_STEPS 0xF79C
@@ -46,7 +46,7 @@ public:
     void OnTransmitIR(const EventHandlerCallback<uint8_t>& callback);
     void ReceiveIR(uint8_t data);
 
-    SSD1854DrawInfo GetDrawInfo() const;
+    NT7508DrawInfo GetDrawInfo() const;
 
     void PressButton(ButtonType button) const;
     void ReleaseButton(ButtonType button) const;
@@ -63,7 +63,7 @@ private:
     // peripherals
     std::shared_ptr<BMA150> bma150 = nullptr;
     std::shared_ptr<M95512> m95512 = nullptr;
-    std::shared_ptr<SSD1854> ssd1854 = nullptr;
+    std::shared_ptr<NT7508> nt7508 = nullptr;
     std::shared_ptr<Buzzer> buzzer = nullptr;
 
     // enhancements

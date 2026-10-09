@@ -108,11 +108,11 @@ void DisplayWidget::paintGL()
     {
         for (int y = 0; y < SCREEN_H; y++)
         {
-            const int page_offset = (y / 8) * 96 * SSD1854_COLUMN_SIZE;
+            const int page_offset = (y / 8) * 96 * NT7508_COLUMN_SIZE;
             const int bit = y % 8;
             for (int x = 0; x < SCREEN_W; x++)
             {
-                const int base = SSD1854_COLUMN_SIZE * x + page_offset;
+                const int base = NT7508_COLUMN_SIZE * x + page_offset;
                 const uint8_t idx = (((splash[base] >> bit) & 1) << 1) |
                     ((splash[base + 1] >> bit) & 1);
                 const int i = (y * SCREEN_W + x) * 4;
@@ -126,9 +126,9 @@ void DisplayWidget::paintGL()
         return;
     }
 
-    SSD1854DrawInfo draw_info = emulator->GetDrawInfo();
+    NT7508DrawInfo draw_info = emulator->GetDrawInfo();
 
-    if (draw_info.power_save_mode)
+    if (draw_info.power_save)
     {
         if (!was_last_frame_power_save)
         {
@@ -147,13 +147,14 @@ void DisplayWidget::paintGL()
     {
         for (int y = 0; y < SCREEN_H; y++)
         {
-            const int page = y / 8 + draw_info.page_offset;
-            const int page_offset = page * SSD1854_TOTAL_COLUMNS * SSD1854_COLUMN_SIZE;
-            const int bit_offset = y % 8;
+            const int row = (y + draw_info.initial_display_line) % NT7508_GRAPHICS_HEIGHT;
+            const int page = row / 8;
+            const int page_offset = page * NT7508_TOTAL_COLUMNS * NT7508_COLUMN_SIZE;
+            const int bit_offset = row % 8;
             for (int x = 0; x < SCREEN_W; x++)
             {
-                const int base = SSD1854_COLUMN_SIZE * x + page_offset;
-                const uint8_t palette_index = (((draw_info.vram.Read8(base) >> bit_offset) & 1) << 1) |
+                const int base = NT7508_COLUMN_SIZE * x + page_offset;
+                const int palette_index = (((draw_info.vram.Read8(base) >> bit_offset) & 1) << 1) |
                     ((draw_info.vram.Read8(base + 1) >> bit_offset) & 1);
                 const int idx = (y * SCREEN_W + x) * 4;
                 pixels[idx] = palette[palette_index].r;
