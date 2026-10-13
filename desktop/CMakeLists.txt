@@ -2,6 +2,8 @@ cmake_minimum_required(VERSION 3.25)
 
 project(pocketwalker)
 
+set(POCKETWALKER_VERSION "dev-build" CACHE STRING "Version string shown in the About dialog")
+
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
@@ -30,6 +32,8 @@ if(WIN32 AND CMAKE_BUILD_TYPE STREQUAL "Release")
 endif()
 
 add_executable(pocketwalker ${EXE_TYPE} ${SOURCES} ${ICON_RESOURCE})
+
+target_compile_definitions(pocketwalker PRIVATE "POCKETWALKER_VERSION=\"${POCKETWALKER_VERSION}\"")
 
 set_target_properties(pocketwalker PROPERTIES
         AUTOMOC ON

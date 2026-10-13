@@ -15,6 +15,7 @@ jobs:
   build-windows:
     runs-on: windows-2025
     env:
+      VERSION_NAME: ${{ github.sha }}
       VCPKG_BINARY_SOURCES: clear;files,${{ github.workspace }}/vcpkg_cache,readwrite
     defaults:
       run:
@@ -48,7 +49,8 @@ jobs:
           cmake --preset release-mingw \
             -DCMAKE_MAKE_PROGRAM="$MINGW_PREFIX/bin/ninja.exe" \
             -DCMAKE_C_COMPILER="$MINGW_PREFIX/bin/gcc.exe" \
-            -DCMAKE_CXX_COMPILER="$MINGW_PREFIX/bin/g++.exe"
+            -DCMAKE_CXX_COMPILER="$MINGW_PREFIX/bin/g++.exe" \
+            -DPOCKETWALKER_VERSION="$VERSION_NAME"
         working-directory: desktop
 
       - name: Build

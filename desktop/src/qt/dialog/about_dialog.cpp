@@ -7,6 +7,7 @@
 #include <QDesktopServices>
 #include <QUrl>
 #include <QPixmap>
+#include <QString>
 
 AboutDialog::AboutDialog(QWidget* parent)
     : QDialog(parent)
@@ -27,7 +28,7 @@ AboutDialog::AboutDialog(QWidget* parent)
     title_font.setBold(true);
     title->setFont(title_font);
 
-    auto* version = new QLabel("Version 2.0.0", this);
+    auto* version = new QLabel(QStringLiteral("%1").arg(POCKETWALKER_VERSION), this);
 
     auto* authors = new QLabel(
         R"(By <a href="https://github.com/h4lfheart">Half</a> and <a href="https://github.com/h4lfheart/pocketwalker/graphs/contributors">contributors</a>.)", this);
